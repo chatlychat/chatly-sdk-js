@@ -4,12 +4,12 @@ Browser SDK for the Chatly platform: control the in-page widget, identify
 visitors, fire CDP events, and — headlessly — list conversations, send
 messages and subscribe to replies without rendering our UI at all.
 
-> **Not published to npm yet.** The install line below will 404 today. The
-> widget-control half of this surface is already available with no package:
-> load the widget snippet and call the methods on `window.Chatly`. The
-> headless half (`listConversations`, `listMessages`, `send`, `uploadFile`,
-> `subscribe`, `rate`, `emailTranscript`) has **no** global and needs this
-> package or a direct call to the documented REST endpoints.
+> **Two halves, and only one is on the widget global.** The widget-control
+> methods (`open`, `close`, `identify`, `track`) are also available with no
+> package at all — load the widget snippet and call them on `window.Chatly`.
+> The headless half (`listConversations`, `listMessages`, `send`,
+> `uploadFile`, `subscribe`, `rate`, `emailTranscript`) has **no** global and
+> needs this package or a direct call to the documented REST endpoints.
 
 ```bash
 npm install @chatlychat/sdk-js
@@ -90,7 +90,7 @@ of the platform, its migrations and its contract checks live, so a pull request 
 cannot be merged directly — but a patch is still the fastest way to get something
 fixed and we will port it with attribution.
 
-What you can do here: read the source, run the tests (`npm install && npm test`),
-open an issue, or open a PR and we will treat the diff as the proposal.
+What you can do here: read the source, run the tests, open an issue, or open a PR
+and we will treat the diff as the proposal.
 
 Issues: https://github.com/chatlychat/chatly-sdk-js/issues · Docs: https://chatlychat.com/docs

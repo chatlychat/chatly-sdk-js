@@ -1,9 +1,9 @@
 {
   "name": "@chatlychat/sdk-js",
   "version": "0.1.0",
-  "description": "Browser SDK for the LiveChat platform — identify visitors, fire events, control the widget.",
+  "description": "Browser SDK for Chatly — identify visitors, fire CDP events, control the widget, and run a conversation headlessly.",
   "license": "MIT",
-  "homepage": "https://chatlychat.com/docs",
+  "homepage": "https://github.com/chatlychat/chatly-sdk-js#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/chatlychat/chatly-sdk-js.git"
@@ -12,14 +12,14 @@
     "url": "https://github.com/chatlychat/chatly-sdk-js/issues"
   },
   "keywords": [
-    "livechat",
+    "chatly",
     "chat",
     "messaging",
     "support",
     "widget",
     "sdk"
   ],
-  "author": "LiveChat Platform Engineering",
+  "author": "Chatly",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
