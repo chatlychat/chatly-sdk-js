@@ -82,6 +82,52 @@ describe('reading', () => {
     expect((await lc.listMessages('conv-1')).map((m) => m.body)).toEqual(['hi']);
   });
 
+  /**
+   * The unread total, for a launcher the host drew themselves.
+   *
+   * The server has always returned `unreadContactCount` on this route — the
+   * widget's own Messages tab renders it per thread — and this type dropped
+   * it, so the one number a custom launcher needs was unreachable. The
+   * documented workaround was to keep a counter from the `message` event,
+   * which cannot know about a reply that arrived while the page was closed.
+   */
+  it('sums the unread count across every thread', async () => {
+    stub((c) =>
+      c.path === '/v1/widget/init'
+        ? SESSION
+        : {
+            conversations: [
+              { id: 'conv-1', unreadContactCount: 2 },
+              { id: 'conv-2', unreadContactCount: 1 },
+              { id: 'conv-3', unreadContactCount: 0 },
+            ],
+          },
+    );
+    const lc = Chatly.init({ publicId: 'acme-web', apiUrl: API });
+
+    expect(await lc.unreadCount()).toBe(3);
+  });
+
+  it('reads an absent count as nothing unread, not NaN', async () => {
+    // An older API build does not send the field, and a badge showing "NaN"
+    // is worse than one showing nothing.
+    stub((c) =>
+      c.path === '/v1/widget/init'
+        ? SESSION
+        : { conversations: [{ id: 'conv-1' }, { id: 'conv-2', unreadContactCount: 4 }] },
+    );
+    const lc = Chatly.init({ publicId: 'acme-web', apiUrl: API });
+
+    expect(await lc.unreadCount()).toBe(4);
+  });
+
+  it('is zero when there are no conversations at all', async () => {
+    stub((c) => (c.path === '/v1/widget/init' ? SESSION : { conversations: [] }));
+    const lc = Chatly.init({ publicId: 'acme-web', apiUrl: API });
+
+    expect(await lc.unreadCount()).toBe(0);
+  });
+
   it('returns an empty array rather than undefined on an older API', async () => {
     // A consumer calling `.map` on the result should not have to null-check it.
     stub((c) => (c.path === '/v1/widget/init' ? SESSION : {}));

@@ -1,7 +1,7 @@
 {
   "name": "@chatlychat/sdk-js",
-  "version": "0.1.0",
-  "description": "Browser SDK for Chatly — identify visitors, fire CDP events, control the widget, and run a conversation headlessly.",
+  "version": "0.3.0",
+  "description": "Browser SDK for Chatly — identify visitors, fire CDP events, control the widget, run a conversation headlessly, and type window.Chatly.",
   "license": "MIT",
   "homepage": "https://github.com/chatlychat/chatly-sdk-js#readme",
   "repository": {
@@ -46,8 +46,7 @@
   },
   "publishConfig": {
     "access": "public",
-    "registry": "https://registry.npmjs.org/",
-    "provenance": true
+    "registry": "https://registry.npmjs.org/"
   },
   "engines": {
     "node": ">=18"

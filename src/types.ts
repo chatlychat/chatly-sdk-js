@@ -31,6 +31,22 @@ export interface HeadlessConversation {
   readonly status?: string;
   readonly lastMessageAt?: string;
   readonly subject?: string | null;
+  /**
+   * Messages in this thread the visitor has not read.
+   *
+   * It was missing from this type while `POST /v1/widget/conversations/list`
+   * had been returning it all along — the widget's own Messages tab renders it
+   * as a per-thread badge. So the number was on the wire and the published
+   * type hid it, which made the one thing a custom launcher needs
+   * unreachable: an integrator building their own button had no way to show
+   * "3 unread" and was told, in our own docs, to keep their own counter from
+   * the `message` event — a counter that cannot know about replies which
+   * arrived while the page was closed.
+   *
+   * Optional because an older API build does not send it, and absent is
+   * correctly read as nothing unread.
+   */
+  readonly unreadContactCount?: number;
 }
 
 /**

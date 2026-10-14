@@ -10,6 +10,7 @@
  */
 
 import { createTypingTracker, newMessagesSince, typingActorOf } from './live.js';
+import { sumUnread } from './unread.js';
 
 import type {
   HeadlessConversation,
@@ -29,6 +30,13 @@ export type {
   TypingSignal,
 } from './types.js';
 export { TYPING_STOP_AFTER_MS } from './live.js';
+/*
+ * The snippet surface: `InitOptions`, `ChatlyApi`, `ChatlyGlobal` and the
+ * shapes they name. Declared in `widget-globals.ts`, which also augments
+ * `window.Chatly` — see that file's header for why a published package is the
+ * only place those declarations can usefully live.
+ */
+export type * from './widget-globals.js';
 
 export interface SdkOptions {
   publicId: string;
@@ -66,12 +74,6 @@ export interface IdentifyInput {
 export interface TrackInput {
   name: string;
   properties?: Record<string, unknown>;
-}
-
-declare global {
-  interface Window {
-    Chatly?: { open?: () => void; close?: () => void; destroy?: () => void };
-  }
 }
 
 /**
@@ -277,6 +279,11 @@ export class Chatly {
     });
     const body = (await res.json()) as { conversations?: HeadlessConversation[] };
     return body.conversations ?? [];
+  }
+
+  /** Total unread across every thread. See `unread.ts` for why it lives here. */
+  public async unreadCount(): Promise<number> {
+    return sumUnread(await this.listConversations());
   }
 
   /** The messages of one conversation, oldest first. */

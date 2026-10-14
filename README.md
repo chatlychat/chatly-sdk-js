@@ -65,6 +65,36 @@ Headless conversation surface — no widget required:
 - `rate(conversationId, score, comment?)`
 - `emailTranscript(conversationId, email)`
 
+## Typing `window.Chatly` (the loader snippet's global)
+
+If you embed the widget with the two-line loader snippet and then drive it from
+your own TypeScript, this package is also the **type declaration** for the
+global. Install it as a dev dependency — you need no runtime code for this —
+and import any type from it. Importing augments `Window` for the whole program,
+so there is no `/// <reference>` line and no `tsconfig` `types` entry to add:
+
+```ts
+import type { ChatlyGlobal, InitOptions } from '@chatlychat/sdk-js';
+
+const options: InitOptions = { publicId: 'acme-web', theme: { primaryColor: '#4f46e5' } };
+window.Chatly?.init(options);
+```
+
+Exported from `0.2.0`: `ChatlyApi`, `ChatlyGlobal`, `InitOptions`,
+`WidgetTheme`, `WidgetBehavior`, `WidgetCopy`, `WidgetQuickLink`, `WidgetQuip`,
+`WidgetIdentity`, `SessionSnapshot`, `ChatlyEventName`, `ChatlyEventHandler`,
+`OpenRequest`, `StartConversationRequest`, `SetContextInput`,
+`ReportActionInput`. These are the widget's own declarations, re-exported
+rather than restated, so there is no copy to drift.
+
+`Window.Chatly` is typed as the full API, because `window.Chatly.identify(...)`
+being a type error is useless to everybody. What is really on the page between
+the snippet running and the bundle arriving is only the queueing **function**
+the snippet installed. From code that can run that early, use the callable
+form, which the snippet queues and the bundle replays —
+`window.Chatly?.('identify', { externalId })` — or wait for
+`Chatly.on('ready', …)`.
+
 ## Signed page context
 
 `setContext` is **not** on this SDK — it is on the widget's own global. See
