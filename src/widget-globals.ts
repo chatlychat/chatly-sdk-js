@@ -66,53 +66,55 @@ export interface WidgetIdentity {
   attributes?: Record<string, unknown>;
 }
 
-/** The routing and pre-fill a new conversation may carry. See `ChatlyApi.startConversation`. */
-export interface StartConversationRequest {
-  readonly botSlug?: string;
-  readonly initialMessage?: string;
-}
-
-/**
- * What `Chatly.setContext()` accepts.
+/*
+ * The method payload shapes live in `./widget-payloads.js` and are
+ * re-exported here, unchanged, so the published surface is identical.
  *
- * Every member is `unknown` because the widget re-checks all of them at the
- * call boundary rather than trusting the page: this is invoked from inside a
- * customer's own click handler, often in a `.then()`, and a rejected promise
- * there is an unhandled rejection on a page we do not control. The narrow
- * shapes are `audience?: string`, `contextToken?: string` (a JWT your SERVER
- * signed), `page?: { path?, url? }` and `context?: Record<string, string |
- * number | boolean>` — anything else is warned about and dropped.
+ * Split at the 650-line ceiling. The seam is deliberate: everything still
+ * DECLARED in this file is a shape `check-widget-wrapper-parity.mjs`
+ * member-compares against `packages/widget-element` — `InitOptions`, the
+ * five appearance types, `WidgetIdentity`, `ChatlyApi`, `ChatlyEventName` —
+ * and that gate reads this path. What moved is the set it only checks for
+ * presence: the arguments you pass to a method and the snapshot an event
+ * hands back. Moving a member-compared type instead would make the gate read
+ * `null` members and fail, which is the behaviour that makes naming a file
+ * by path safe there — but it would still be the wrong split.
  */
-export interface SetContextInput {
-  audience?: unknown;
-  page?: unknown;
-  contextToken?: unknown;
-  /** Further UNSIGNED claims. Signed ones live inside `contextToken`. */
-  context?: unknown;
-}
+// `WidgetQuip` is NOT imported here: it is re-exported below but never
+// referenced in this file, and an unused import is a lint error.
+import type {
+  WidgetBehavior,
+  WidgetCopy,
+  WidgetQuickLink,
+  WidgetTheme,
+} from './widget-appearance.js';
+import type {
+  ChatlyEventHandler,
+  OpenRequest,
+  ReportActionInput,
+  SessionSnapshot,
+  SetContextInput,
+  StartConversationRequest,
+} from './widget-payloads.js';
 
-/**
- * What `Chatly.reportAction()` accepts. `unknown` for the same reason as
- * `SetContextInput`.
- *
- * The shape the widget will act on is `{ messageId: string, actionId: string,
- * status: 'done' | 'failed', text?: string, blocks?: unknown, data?:
- * Record<string, unknown> }`.
- */
-export interface ReportActionInput {
-  messageId?: unknown;
-  actionId?: unknown;
-  status?: unknown;
-  text?: unknown;
-  blocks?: unknown;
-  data?: unknown;
-}
+// Imported for use in `ChatlyApi` below AND re-exported unchanged, so the
+// published surface is identical to before the split.
+export type {
+  WidgetBehavior,
+  WidgetCopy,
+  WidgetQuickLink,
+  WidgetQuip,
+  WidgetTheme,
+} from './widget-appearance.js';
 
-/** What `ready` and `identified` carry. `contactId` is null while anonymous. */
-export interface SessionSnapshot {
-  contactId: string | null;
-  workspaceId: string;
-}
+export type {
+  ChatlyEventHandler,
+  OpenRequest,
+  ReportActionInput,
+  SessionSnapshot,
+  SetContextInput,
+  StartConversationRequest,
+};
 
 export type ChatlyEventName =
   | 'ready'
@@ -133,9 +135,29 @@ export type ChatlyEventName =
    * to something destructive has chosen that.
    */
   | 'action'
-  | 'error';
-
-export type ChatlyEventHandler = (detail: unknown) => void;
+  | 'error'
+  /**
+   * The server stored the visitor's message (W-09). Detail is
+   * `{ id, localId, conversationId }`: `id` is the stored message's — the one
+   * webhooks and the REST API use — and `localId` the placeholder the thread
+   * showed while it was sending. Fires at the same moment as `message`, which
+   * keeps its original shape for the `on.message` callback.
+   */
+  | 'message.ack'
+  /**
+   * An agent or bot message arrived while the thread was on screen (W-09).
+   * Detail is `{ id, conversationId, authorType, body }`. `message` does NOT
+   * fire for these — it has only ever meant "the visitor sent something".
+   * A reply that lands while the panel is closed is reported by `unread`.
+   */
+  | 'message.received'
+  /**
+   * The unread count changed (W-06). Detail is `{ count }` — agent and bot
+   * messages the visitor has not had on screen, across their threads.
+   * Replayed to a late subscriber, like `ready`. Never fires for a visitor
+   * who has never had a conversation.
+   */
+  | 'unread';
 
 /**
  * Complete public API for the widget loader. Everything visible or
@@ -209,8 +231,23 @@ export interface InitOptions {
    *
    * It is opt-out rather than opt-in because the alternative would change
    * behaviour for every embed that already exists.
+   *
+   * While storage is withheld, the marketing query family — `utm_*`,
+   * `gclid`, `fbclid`, `msclkid`, `ttclid` — is also STRIPPED from every page
+   * URL the widget sends (init, page views, the conversation's origin,
+   * `setContext`), and the conversation's `utm_*` origin fields are not
+   * sent. An embed on `'deny'` therefore records no campaign attribution for
+   * a visitor who never grants consent. Granting restores it from the next
+   * URL the widget reads; nothing withheld is replayed.
+   *
+   * `'on-open'` stores nothing until the visitor ENGAGES — opens the panel
+   * from the launcher or through `Chatly.open()`, or starts a conversation —
+   * and then behaves as `'allow'`. An `autoOpenAfterMs` timer is not
+   * engagement. A visitor who engaged on an earlier page has storage from the
+   * start, so their thread survives navigation. Until they engage, the
+   * stripping above applies.
    */
-  storage?: 'allow' | 'deny';
+  storage?: 'allow' | 'deny' | 'on-open';
 
   /** Free-form CSS injected into the shadow root. Last word on styling. */
   cssOverrides?: string;
@@ -248,216 +285,6 @@ export interface InitOptions {
     }) => void;
   };
 }
-
-export interface WidgetTheme {
-  /**
-   * Replace any of the widget's functional icons. Each value may be an inline
-   * `<svg>`, an image URL, or a literal character.
-   */
-  icons?: Partial<Record<'mic' | 'stop' | 'attachment' | 'check' | 'star', string>>;
-  // ── Colors ──────────────────────────────────────────────────────────
-  primaryColor?: string;
-  primaryContrast?: string;
-  background?: string;
-  backgroundSubtle?: string;
-  foreground?: string;
-  foregroundMuted?: string;
-  border?: string;
-  bubbleAgentBg?: string;
-  bubbleAgentFg?: string;
-
-  // ── Typography ──────────────────────────────────────────────────────
-  fontFamily?: string;
-  fontSize?: number | string;
-
-  // ── Shape ───────────────────────────────────────────────────────────
-  borderRadius?: number | string;
-  launcherSize?: number;
-  panelWidth?: number;
-  panelHeight?: number;
-
-  // ── Position ────────────────────────────────────────────────────────
-  position?: 'left' | 'right';
-  offsetX?: number;
-  offsetY?: number;
-
-  // ── Header ──────────────────────────────────────────────────────────
-  /** Solid color, gradient, or 'none'. */
-  headerStyle?: 'gradient' | 'solid' | 'plain';
-  /** Custom gradient stops (overrides headerStyle gradient default). */
-  headerGradient?: [string, string];
-
-  // ── Launcher ────────────────────────────────────────────────────────
-  /** Hide launcher entirely; you call `Chatly.open()` from your own button. */
-  hideLauncher?: boolean;
-  /** Custom launcher svg (string of inner SVG markup). */
-  launcherIcon?: string;
-  /** Or use an image URL for the launcher (mascot face, brand icon, etc.). */
-  launcherImage?: string;
-  /** Show a notification ping dot on the launcher when there's something new. */
-  launcherPing?: boolean;
-  /** Make the launcher idly wiggle to draw attention. */
-  launcherIdleAnimation?: 'none' | 'wiggle' | 'pulse' | 'bounce';
-
-  // ── Color scheme ────────────────────────────────────────────────────
-  /** 'light' | 'dark' | 'auto' (matches prefers-color-scheme). */
-  colorScheme?: 'light' | 'dark' | 'auto';
-
-  /**
-   * State colours. Only these three, because the widget renders each one:
-   * `danger` on a validation error, `success` on a receipt, `warning` on the
-   * offline banner. Surfaces are derived from `background`/`foreground`
-   * rather than set, not configured.
-   */
-  dangerColor?: string;
-  successColor?: string;
-  warningColor?: string;
-
-  // ── Branding ────────────────────────────────────────────────────────
-  /** Hide the "Powered by Chatly" footer (paid tiers). */
-  hideBranding?: boolean;
-
-  // ── Logo / avatar ───────────────────────────────────────────────────
-  logoUrl?: string;
-  /** Square avatar shown next to org name in the header. */
-  agentAvatarUrl?: string;
-}
-
-export interface WidgetBehavior {
-  /** Which tabs to show + their order. */
-  tabs?: Array<'home' | 'messages' | 'help'>;
-  /** Which tab opens first. Default: 'home'. */
-  defaultTab?: 'home' | 'messages' | 'help';
-  /** Open the widget automatically after N ms on the page. */
-  autoOpenAfterMs?: number;
-  /** Hide the widget on URL patterns (globs). */
-  hideOnUrls?: string[];
-  /** Tone the empty-help state down: hide search until typed in. */
-  helpSearchOnly?: boolean;
-
-  /**
-   * Suggested openers on an empty conversation, rendered as chips.
-   *
-   * Distinct from `startConversation.initialMessage`, which pre-fills the
-   * composer for a visitor who clicked one specific quick-link. These are
-   * offered to every visitor who opens the panel with nothing to say yet.
-   */
-  starterPrompts?: string[];
-
-  /**
-   * The home screen's sections, in order.
-   *
-   * Absent means the historical four in the historical order, so an existing
-   * embed sees no change. A list that OMITS a section hides it — that is how
-   * you turn the recent-conversation card off.
-   */
-  home?: Array<'start' | 'recent' | 'quickLinks' | 'blocks' | 'helpSearch'>;
-
-  /**
-   * Tier 1 blocks for the home screen's `blocks` section — a `{ v, blocks }`
-   * envelope, the same shape a message carries. Validated at the render
-   * boundary, so a block type a newer release added does not blank the home
-   * screen on an older bundle.
-   */
-  homeBlocks?: unknown;
-
-  /**
-   * Let visitors drag the launcher around the page. The chosen position
-   * persists in localStorage per channel so they only have to set it once.
-   * Default: false.
-   */
-  draggable?: boolean;
-
-  /**
-   * Scroll-aware floating "quip" tooltips. When the viewport's center is
-   * inside an element matching `selector`, the launcher floats a small
-   * speech bubble with one of `lines` (cycled every ~3s). Same idea as
-   * Pip but built into the widget so every customer can use it.
-   */
-  quips?: WidgetQuip[];
-
-  /**
-   * Fun easter egg: hammering the launcher N times in 2s triggers a
-   * confetti burst. Default: 5. Set 0 to disable.
-   */
-  confettiClickStreak?: number;
-}
-
-export interface WidgetQuip {
-  /** CSS selector to watch. e.g. `[data-section="pricing"]` or `#hero`. */
-  selector: string;
-  /** Lines to cycle through while this section is in view. */
-  lines: string[];
-  /** How long to dwell per line, ms. Default: 3500. */
-  intervalMs?: number;
-  /** If true, only show the quip once per page-load, not on every revisit. */
-  oncePerSession?: boolean;
-}
-
-export interface WidgetQuickLink {
-  /** Button label. */
-  label: string;
-  /** URL to open in a new tab. */
-  href?: string;
-  /**
-   * Or kick off a conversation. Two shapes accepted:
-   *  - `string` — legacy: a free-form body that becomes the initial message
-   *    (the composer pre-fills with it; the visitor can edit before sending).
-   *  - `{ initialMessage }` — the recommended object form, gives us room to
-   *    grow (`assignedTeamId`, `topic`, etc.) without another schema migration.
-   */
-  startConversation?: string | { initialMessage?: string };
-  /** Optional small description below the label. */
-  description?: string;
-  /** Optional emoji or single character as a leading icon. */
-  icon?: string;
-}
-
-export interface WidgetCopy {
-  greeting?: string; // home tab hero ("How can we help?")
-  greetingSubtitle?: string; // small text under greeting
-  homeStartCta?: string; // "Send us a message"
-  homeStartCtaSubtitle?: string; // "We usually reply in a few minutes"
-  homeRecentTitle?: string; // "Recent conversations"
-  homeQuickLinksTitle?: string; // "Quick links"
-  homeHelpTitle?: string; // "Find an answer"
-  tabHome?: string; // "Home"
-  tabMessages?: string; // "Messages"
-  tabHelp?: string; // "Help"
-  messagesEmpty?: string; // "No conversations yet."
-  messagesNewCta?: string; // "Start a new conversation"
-  helpSearchPlaceholder?: string; // "Search for help..."
-  helpEmpty?: string; // "Try searching for what you need."
-  helpNoResults?: string; // "No articles found."
-  helpStillNeedHelp?: string; // "Still need help? Talk to us."
-  composerPlaceholder?: string; // "Type your message..."
-  composerSend?: string; // "Send"
-  poweredBy?: string; // "Powered by Chatly"
-  closeAria?: string; // "Close chat"
-  backAria?: string; // "Back"
-  /**
-   * Shown to the VISITOR when the widget could not start at all — a refused
-   * origin, a dead network, a 5xx. Deliberately says nothing about the cause:
-   * the cause is the integrator's business and goes to the console, and on a
-   * public page "origin not allowed on this channel" also tells a stranger
-   * about the channel's configuration.
-   */
-  unavailableMessage?: string; // "Chat is unavailable right now."
-  /** The retry button, shown only when retrying could actually succeed. */
-  unavailableRetry?: string; // "Try again"
-  /**
-   * The expected-reply note in the header, shown ONLY while somebody is
-   * available to answer.
-   *
-   * It was a hardcoded sentence that no workspace could change and that the
-   * widget showed regardless of staffing, so an unstaffed workspace told every
-   * visitor it typically replies within a few minutes. The default is still a
-   * claim — set this to your real figure, or to an empty string to show
-   * nothing at all.
-   */
-  responseTimeNote?: string; // "We typically reply within a few minutes"
-}
-
 /**
  * The complete `window.Chatly` surface.
  *
@@ -560,6 +387,19 @@ export interface ChatlyApi {
    * because there is nothing to recover. See the `storage` init option.
    */
   setStorageConsent: (granted: boolean) => void;
+  /**
+   * The unread count the launcher badge shows (W-06): agent and bot messages
+   * this visitor has not had on screen. 0 before it is known. Subscribe to
+   * `unread` to be told when it changes.
+   */
+  getUnreadCount: () => number;
+  /**
+   * Whether this browser holds a conversation for this channel (W-07) — a
+   * RETURNING chatter. False under `storage: 'deny'` until consent, because
+   * nothing is kept. `loader.js` answers it before the widget has loaded, by
+   * the same test, which is how lazy mode loads eagerly for these visitors.
+   */
+  hasSession: () => boolean;
   /** Subscribe. `'ready'` replays immediately if it already happened. */
   on: (event: ChatlyEventName, handler: ChatlyEventHandler) => void;
   off: (event: ChatlyEventName, handler: ChatlyEventHandler) => void;
@@ -585,17 +425,6 @@ export interface ChatlyApi {
  * embedder can reason about.
  */
 export type ChatlyGlobal = ChatlyApi & ((...args: unknown[]) => void);
-
-/** The object form of `open`. See `ChatlyApi.open`. */
-export interface OpenRequest extends StartConversationRequest {
-  /**
-   * Only `'conversation'` today, and it is a required discriminator rather
-   * than an optional convenience: `open({ botSlug })` with no `view` would be
-   * ambiguous about whether the caller wanted a tab or a thread, and the two
-   * differ in whether the visitor has to click again.
-   */
-  readonly view: 'conversation';
-}
 
 /**
  * `window.Chatly`, typed — the whole point of publishing this file.
