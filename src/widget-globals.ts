@@ -118,6 +118,11 @@ export type {
 
 export type ChatlyEventName =
   | 'ready'
+  /**
+   * The panel opened. Detail is `{ conversationId }` — the thread it opened
+   * on, or null on the home screen or an unsent new conversation. It was `{}`
+   * until 2026-10-15.
+   */
   | 'open'
   | 'close'
   | 'message'
@@ -270,7 +275,12 @@ export interface InitOptions {
 
   /** Lifecycle hooks. */
   on?: {
-    open?: () => void;
+    /**
+     * `conversationId` is the thread the panel opened on, or null for the home
+     * screen or an unsent new conversation. The same object is the `open`
+     * window event's detail. A `() => void` callback is still assignable.
+     */
+    open?: (detail: { conversationId: string | null }) => void;
     close?: () => void;
     ready?: (session: { contactId: string; workspaceId: string }) => void;
     /**
