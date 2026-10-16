@@ -56,6 +56,9 @@ Headless conversation surface — no widget required:
 - `startConversation(body, attachments?)` → `{ conversationId }`
 - `send(conversationId, body, attachments?)`
 - `listConversations(limit = 20)`
+- `unreadCount()` → `number`. Agent and bot messages this visitor has not
+  read, across their threads — the number a custom launcher's badge shows. It
+  costs a request, so it is a call rather than a property.
 - `listMessages(conversationId, limit = 50)`
 - `subscribe(conversationId, handlers, options?)` → `Subscription`. Uses the
   push socket when it can and falls back to polling, so it keeps working
@@ -84,8 +87,30 @@ Exported from `0.2.0`: `ChatlyApi`, `ChatlyGlobal`, `InitOptions`,
 `WidgetTheme`, `WidgetBehavior`, `WidgetCopy`, `WidgetQuickLink`, `WidgetQuip`,
 `WidgetIdentity`, `SessionSnapshot`, `ChatlyEventName`, `ChatlyEventHandler`,
 `OpenRequest`, `StartConversationRequest`, `SetContextInput`,
-`ReportActionInput`. These are the widget's own declarations, re-exported
-rather than restated, so there is no copy to drift.
+`ReportActionInput`. And from `0.4.0`: `MountOptions`. These are the widget's
+own declarations, re-exported rather than restated, so there is no copy to
+drift.
+
+### A second, inline view (`mount`)
+
+`ChatlyApi` declares `mount(opts: MountOptions)` and `unmount(el)` — a SECOND
+widget view, inline in your page, beside the launcher. It is on the widget's
+global and **not** on the `Chatly` class above: a view is rendered by the
+widget bundle, so it needs the bundle on the page.
+
+```ts
+import type { MountOptions } from '@chatlychat/sdk-js';
+
+const view: MountOptions = { el: '#shop-assistant', publicId: 'ch_web_shop…' };
+window.Chatly?.('mount', view);
+// later, when your route unmounts
+window.Chatly?.('unmount', '#shop-assistant');
+```
+
+`MountOptions` is `InitOptions` with `mountTo` replaced by `el` and
+`publicId` made optional. What a view shares with the primary widget, what it
+does not, and why there is no `botSlug`: see
+[the web channel guide](https://chatlychat.com/guides/channel-web#an-inline-assistant-and-the-support-launcher).
 
 `Window.Chatly` is typed as the full API, because `window.Chatly.identify(...)`
 being a type error is useless to everybody. What is really on the page between

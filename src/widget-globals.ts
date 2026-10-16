@@ -169,6 +169,29 @@ export type ChatlyEventName =
  * behavioral is exposed here — colors, copy, layout, behavior. Anything
  * you can't toggle from `theme` belongs in `cssOverrides`.
  */
+/**
+ * What `Chatly('mount', …)` takes — a second, inline view (W-10).
+ *
+ * A subset of `InitOptions`, and the omissions are the design. `mountTo` is
+ * replaced by `el`, since a view is always inline. `storage` is absent
+ * because there is one answer per visitor to "may this browser be written
+ * to", set by `init`; a second, conflicting one is not a thing to offer. `on`
+ * is absent because the lifecycle callbacks belong to the primary widget, and
+ * a view that installed its own would make `on('message')` ambiguous. Most of
+ * `behavior` is absent because the rest of it describes the PAGE —
+ * `hideOnUrls`, `autoOpenAfterMs`, `draggable` — which a view sitting inside
+ * somebody else's layout has no business deciding.
+ */
+export interface MountOptions
+  extends Omit<InitOptions, 'publicId' | 'mountTo' | 'storage' | 'on' | 'behavior'> {
+  /** Where to render. A selector or an element; it must already exist. */
+  el: string | Element;
+  /** The channel this view talks to. Defaults to the primary widget's. */
+  publicId?: string;
+  /** The part of `behavior` that describes a view rather than the page. */
+  behavior?: Pick<WidgetBehavior, 'tabs' | 'defaultTab'>;
+}
+
 export interface InitOptions {
   /** Channel public ID — required. */
   publicId: string;
@@ -410,6 +433,46 @@ export interface ChatlyApi {
    * the same test, which is how lazy mode loads eagerly for these visitors.
    */
   hasSession: () => boolean;
+  /**
+   * Add a SECOND widget view, inline in the page, beside the launcher.
+   *
+   * `mountTo` on `init` relocates the one widget into a container, which
+   * means choosing between an embedded chat and a floating launcher. This
+   * adds a view instead, so a page can carry both: a full-page assistant at
+   * `/shop/assistant` and the support launcher in the corner of every page
+   * including that one.
+   *
+   * ── Give the view its own channel ───────────────────────────────────────
+   *
+   * `publicId` defaults to the primary widget's, and passing a different one
+   * is the point of the feature. A view on its own channel gets its own
+   * session, its own thread and — this is the part that matters — its own
+   * OPERATOR-CONFIGURED bot route, decided on the server where a visitor
+   * cannot reach it.
+   *
+   * There is deliberately no `botSlug` here. That would travel as the
+   * unsigned claim `context.unverified.bot`, and the context row it writes is
+   * keyed per visitor per CHANNEL and replaced wholesale on every write — so
+   * two views on one channel cannot each hold their own bot, and the second
+   * would re-point the first's next conversation while wiping whatever
+   * `audience` the page had set. A forgeable hint is also the wrong place for
+   * a routing decision as soon as the two assistants differ in what they may
+   * reach, which a shopping agent that can look up orders does.
+   *
+   * ── What a view shares ──────────────────────────────────────────────────
+   *
+   * Shared, being facts about the person: identity (`identify()` reaches
+   * every view), the chosen locale, storage consent. Not shared: the session,
+   * the conversation, the context bag, the panel state. And a view never
+   * takes over the published surface — `open()`, `track()`, `on('message')`
+   * and the launcher's unread badge all stay with the primary widget.
+   *
+   * Refused, loudly, with the reason named: before `init`, on a container
+   * that does not exist, and on a container that already holds a view.
+   */
+  mount: (opts: MountOptions) => void;
+  /** Remove a view added by `mount`. Unknown containers are ignored. */
+  unmount: (el: string | Element) => void;
   /** Subscribe. `'ready'` replays immediately if it already happened. */
   on: (event: ChatlyEventName, handler: ChatlyEventHandler) => void;
   off: (event: ChatlyEventName, handler: ChatlyEventHandler) => void;

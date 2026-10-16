@@ -1,5 +1,30 @@
 # @chatlychat/sdk-js — changelog
 
+## 0.4.0 — 2026-10-16
+
+- **`mount` and `unmount` are on `ChatlyApi`, and `MountOptions` is
+  exported.** `Chatly('mount', { el, publicId })` adds a SECOND widget view,
+  inline in the page, beside the launcher — a full-page assistant on one route
+  and the support launcher in the corner of every page including that one.
+  `Chatly('unmount', el)` removes it. The widget has shipped both since
+  2026-10-16; until now a TypeScript host calling them got an error for
+  methods that were on the global, which is the whole reason this package
+  declares it.
+
+  These are declarations of the WIDGET's global, not methods on the `Chatly`
+  class this package exports. There is no `chatly.mount()`: a view is rendered
+  by the widget bundle, so it needs the bundle on the page.
+
+- `MountOptions` is a subset of `InitOptions` and the omissions are typed
+  rather than documented: `mountTo` is replaced by `el` (a view is always
+  inline), `publicId` is optional and defaults to the primary widget's,
+  `storage` and `on` are absent, and `behavior` narrows to `tabs` and
+  `defaultTab` — the rest of `behavior` describes the PAGE, which a view
+  inside somebody else's layout does not decide. There is deliberately no
+  `botSlug`; a view binds to its own channel, whose bot route is set on the
+  server. See the [web channel guide](https://chatlychat.com/guides/channel-web)
+  for the call and what a view shares with the primary widget.
+
 ## 0.3.0 — 2026-10-14
 
 - **`unreadCount()` — the number a custom launcher needs.** A host who
