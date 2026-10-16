@@ -421,6 +421,24 @@ export interface ChatlyApi {
    */
   setStorageConsent: (granted: boolean) => void;
   /**
+   * Move the widget and its panel after boot — the live form of
+   * `theme.offsetX`, `theme.offsetY` and `theme.panelOffsetY`.
+   *
+   * `x` and `y` move the host element in its corner; `panelY` moves the
+   * panel's bottom edge up from it, which is the number a page with its own
+   * launcher button needs (see `WidgetTheme.panelOffsetY`). Every key is
+   * optional; anything that is not a finite number is left as it was, and a
+   * call that changes nothing warns.
+   *
+   * It does not close an open panel and emits no `open` or `close` — a
+   * positional change is not a visibility change.
+   *
+   * `x` is measured from whichever side `theme.position` chose. It has no
+   * effect under `mountTo`/`inline`, where the widget is a block in your own
+   * layout and the corner offsets never applied in the first place.
+   */
+  setOffset: (offset: { x?: number; y?: number; panelY?: number }) => void;
+  /**
    * The unread count the launcher badge shows (W-06): agent and bot messages
    * this visitor has not had on screen. 0 before it is known. Subscribe to
    * `unread` to be told when it changes.

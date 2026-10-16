@@ -44,6 +44,24 @@ export interface WidgetTheme {
   position?: 'left' | 'right';
   offsetX?: number;
   offsetY?: number;
+  /**
+   * Where the PANEL's bottom edge sits, measured up from `offsetY`.
+   *
+   * For a host page that draws its own launcher button. With
+   * `hideLauncher: true` the panel's bottom edge lands on `offsetY`, which is
+   * exactly where that button is — so the panel covers it. Set this to the
+   * button's height plus whatever gap you want: `panelOffsetY: 60` with the
+   * default `offsetY: 16` puts the panel 76px up from the bottom of the
+   * viewport and leaves the bottom 16–76px band to you.
+   *
+   * It REPLACES the built-in launcher-clearing offset rather than adding to
+   * it, so setting it with the launcher visible moves the panel over the
+   * launcher. The built-in launcher's own placement — 56px of button plus a
+   * 12px gap — needs no configuration and is unaffected when this is unset.
+   *
+   * `Chatly.setOffset({ panelY })` is the same number, live.
+   */
+  panelOffsetY?: number;
 
   // ── Header ──────────────────────────────────────────────────────────
   /** Solid color, gradient, or 'none'. */

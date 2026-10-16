@@ -1,5 +1,24 @@
 # @chatlychat/sdk-js — changelog
 
+## 0.5.0 — 2026-10-16
+
+### Added
+
+- `WidgetTheme.panelOffsetY` — how far above the bottom of the viewport the
+  panel's bottom edge sits, measured from `offsetY`. It **replaces** the
+  launcher-relative default rather than adding to it, and it is not gated on
+  `hideLauncher`: a field that silently needs a second field set is a control
+  that appears to work.
+- `ChatlyApi.setOffset({ x?, y?, panelY? })` — move the widget after `ready`,
+  live. `x` writes only the side `theme.position` chose, because writing both
+  `left` and `right` on a fixed element lets width pick the winner. It emits
+  no `open` or `close`: it sets inline properties on elements the mount
+  already holds, and never re-initialises.
+
+Both exist for one reported case (Numera NCH-22): with `theme.hideLauncher`
+the panel sat on `offsetY`, so a host's own launcher button at that spot was
+covered by it, and there was no way to move either.
+
 ## 0.4.0 — 2026-10-16
 
 - **`mount` and `unmount` are on `ChatlyApi`, and `MountOptions` is
