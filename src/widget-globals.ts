@@ -127,6 +127,22 @@ export type ChatlyEventName =
   | 'close'
   | 'message'
   | 'conversation'
+  /**
+   * The thread on screen CHANGED — the same moments as `conversation`, minus
+   * the first one.
+   *
+   * Detail is `{ conversationId }`, null when the visitor is on the home
+   * screen, a tab or an article. It fires when they pick a thread from the
+   * Messages list, go back, or start a new conversation that then receives
+   * its server id (after `message.ack`); it does NOT fire when the panel
+   * first opens on a thread, because `open` already carries that id.
+   *
+   * Use this one if you mirror the visitor's current conversation and want to
+   * re-sync on a move. Use `conversation` if you want the current answer
+   * including at startup. Neither fires when nothing changed: the id is
+   * deduped, so closing and reopening on the same thread is silent.
+   */
+  | 'conversation.changed'
   | 'identified'
   | 'reset'
   /**
