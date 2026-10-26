@@ -209,12 +209,18 @@ describe('subscribing', () => {
           ? { token: 'rt-1', expiresAt: '2026-01-01T00:00:00Z' }
           : { messages: [] },
     );
-    // Typed explicitly: inferred from the assignment inside `on`, TypeScript
-    // narrows `handler` to `null` and the call below is "not callable".
-    const captured: { handler: ((raw: unknown) => void) | undefined } = { handler: undefined };
+    /*
+     * Keyed BY EVENT NAME, not "the last handler registered".
+     *
+     * The socket now also listens for `disconnect` and `connect_error` (that
+     * is what re-mints the realtime token before the next attempt), so a fake
+     * that keeps one handler keeps whichever was registered last and this
+     * test would fire a message envelope at the reconnect handler.
+     */
+    const captured = new Map<string, (raw: unknown) => void>();
     const made = {
-      on: (_e: string, h: (raw: unknown) => void) => {
-        captured.handler = h;
+      on: (e: string, h: (raw: unknown) => void) => {
+        captured.set(e, h);
       },
       // The factory's contract now includes `emit`, for the typing event.
       emit: vi.fn(),
@@ -230,7 +236,7 @@ describe('subscribing', () => {
     // Pointed at the host `init` reported, not the API base.
     expect(io).toHaveBeenCalled();
     expect(io.mock.calls[0]?.[0]).toBe('wss://rt.test');
-    captured.handler?.({
+    captured.get('event')?.({
       type: 'message.created',
       payload: { id: 'pushed', body: 'x', authorType: 'agent', createdAt: '9' },
     });
@@ -366,10 +372,11 @@ describe('typing, inbound', () => {
           ? { token: 'rt-1', expiresAt: '2026-01-01T00:00:00Z' }
           : { messages: [] },
     );
-    const captured: { handler: ((raw: unknown) => void) | undefined } = { handler: undefined };
+    // Keyed by event name — see the note in the push test above.
+    const captured = new Map<string, (raw: unknown) => void>();
     const made = {
-      on: (_e: string, h: (raw: unknown) => void) => {
-        captured.handler = h;
+      on: (e: string, h: (raw: unknown) => void) => {
+        captured.set(e, h);
       },
       emit: vi.fn(),
       disconnect: vi.fn(),
@@ -379,7 +386,7 @@ describe('typing, inbound', () => {
     const sub = lc.subscribe('conv-1', handlers, { io });
     await new Promise((r) => setTimeout(r, 80));
     return {
-      fire: (envelope) => captured.handler?.(envelope),
+      fire: (envelope) => captured.get('event')?.(envelope),
       made,
       stop: () => sub(),
     };

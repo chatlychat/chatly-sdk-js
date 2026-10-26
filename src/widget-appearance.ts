@@ -17,8 +17,17 @@ export interface WidgetTheme {
   /**
    * Replace any of the widget's functional icons. Each value may be an inline
    * `<svg>`, an image URL, or a literal character.
+   *
+   * **This union is the third copy of a list that must agree**, and it was
+   * wrong: it carried five names and the runtime set has six — `emoji` was
+   * missing, so a TypeScript consumer could not set that icon at all while an
+   * untyped `init` could. The authority is `WIDGET_ICON_NAMES` in
+   * `@livechat/shared/widget-config/icons`, which this package cannot import
+   * (it ships with zero dependencies, which is the point of it), so the union
+   * is restated here and `icon-names-parity.spec.ts` reads the shared file as
+   * TEXT and fails if the two disagree. Add a name there first.
    */
-  icons?: Partial<Record<'mic' | 'stop' | 'attachment' | 'check' | 'star', string>>;
+  icons?: Partial<Record<'attachment' | 'emoji' | 'mic' | 'stop' | 'check' | 'star', string>>;
   // ── Colors ──────────────────────────────────────────────────────────
   primaryColor?: string;
   primaryContrast?: string;
@@ -62,10 +71,36 @@ export interface WidgetTheme {
    * `Chatly.setOffset({ panelY })` is the same number, live.
    */
   panelOffsetY?: number;
+  /**
+   * A CSS selector for YOUR OWN button, which the panel sits above.
+   *
+   * `anchor: '[data-chat-button]'` and you stop measuring. The panel's bottom
+   * edge lands a 12px gap above whatever that selector matches, and it
+   * follows the element: a consent banner appearing, a sticky bar growing,
+   * the viewport resizing. If the selector matches nothing — or the element
+   * is removed, or hidden — the panel falls back to its corner geometry,
+   * which is where it sits today.
+   *
+   * It takes precedence over `panelOffsetY` while the element is there, and
+   * is the option to reach for instead of it: `panelOffsetY` is a number you
+   * measured once, and a layout changes.
+   *
+   * With `hideLauncher: true` and no `panelOffsetY` you get this for free and
+   * need not set it at all: the panel anchors to whichever element called
+   * `Chatly.open()`, which is your own button by construction.
+   */
+  anchor?: string;
 
   // ── Header ──────────────────────────────────────────────────────────
   /** Solid color, gradient, or 'none'. */
-  headerStyle?: 'gradient' | 'solid' | 'plain';
+  /**
+   * Solid colour, gradient, a plain neutral bar, or `light` — a white
+   * header with brand-coloured title, controls and logo plate plus a
+   * hairline. `light` is not `plain` with another foreground: `plain` is the
+   * neutral one, `light` spends the brand colour on the three things that
+   * carry identity.
+   */
+  headerStyle?: 'gradient' | 'solid' | 'plain' | 'light';
   /** Custom gradient stops (overrides headerStyle gradient default). */
   headerGradient?: [string, string];
 
@@ -103,6 +138,243 @@ export interface WidgetTheme {
   logoUrl?: string;
   /** Square avatar shown next to org name in the header. */
   agentAvatarUrl?: string;
+
+  // ── Cards (read by widget-commerce.css, the deferred chunk) ────────
+  cardBg?: string;
+  cardBorder?: string;
+  cardRadius?: number | string;
+  /** A `box-shadow` value — `0 2px 8px rgba(0,0,0,.08)`, or `none`. */
+  cardShadow?: string;
+  /** `aspect-ratio` for the card image, e.g. `4 / 3`. */
+  cardImageRatio?: string;
+  cardImageFit?: 'cover' | 'contain' | 'fill' | 'none' | 'scale-down';
+  cardPerView?: string;
+  /**
+   * Title lines before clamping, as a STRING: `'2'`.
+   *
+   * A string because the widget appends `px` to every number it is given
+   * — one code path, which is what `launcherSize` and `panelWidth` need —
+   * and `-webkit-line-clamp: 2px` is invalid at computed-value time, so
+   * the declaration would be dropped and the setting would do nothing.
+   */
+  cardTitleLines?: string;
+  cardPriceColor?: string;
+  cardPriceSize?: number | string;
+  cardBadgeBg?: string;
+  cardBadgeFg?: string;
+  /**
+   * The card's action buttons, as three colours rather than a
+   * `filled | outline | ghost` enum — CSS cannot branch on a custom
+   * property's value on this project's browser floor. `transparent`
+   * background with a brand foreground is the outline/ghost pair.
+   */
+  cardButtonBg?: string;
+  cardButtonBorder?: string;
+  cardButtonFg?: string;
+  // ── Quick-reply chips (also in the deferred chunk's stylesheet) ────
+  chipBg?: string;
+  chipFg?: string;
+  chipBorder?: string;
+  chipRadius?: number | string;
+  chipHoverBg?: string;
+  /** `nowrap` turns the chip row into a horizontal scroller. */
+  chipWrap?: 'wrap' | 'nowrap';
+  // ── Header geometry ───────────────────────────────────────────────
+  headerHeight?: number | string;
+  headerTitleSize?: number | string;
+  headerSubtitleSize?: number | string;
+  /** The logo and the close button only — hides the workspace name. */
+  headerLogoOnly?: boolean;
+  // ── Composer ──────────────────────────────────────────────────────
+  composerBg?: string;
+  composerBorder?: string;
+  composerRadius?: number | string;
+  composerPlaceholder?: string;
+  /** The attachment, emoji, dictation and voice-note buttons. */
+  composerIcon?: string;
+  composerSendBg?: string;
+  composerSendFg?: string;
+  composerButtonBg?: string;
+  /**
+   * The glyph colour inside those buttons. Falls through to `composerIcon`.
+   *
+   * Separate from `composerIcon` because a filled button's glyph does not sit
+   * on the composer's own background — see the server schema's note.
+   */
+  composerButtonFg?: string;
+  /** The icon buttons' own box, as a CSS length. `auto` is the glyph plus padding. */
+  composerButtonSize?: number | string;
+  // ── Type scale and density ────────────────────────────────────────
+  fontSizeSmall?: number | string;
+  headingSize?: number | string;
+  /** A unitless ratio as a STRING — `'1.4'` — or a length. */
+  lineHeight?: string;
+  density?: 'compact' | 'comfortable';
+  // ── Launcher ──────────────────────────────────────────────────────
+  /** A text label beside the icon — "Ask the shopping agent". */
+  launcherLabel?: string;
+  /** `999px` is a circle, `12px` a rounded square, `0` a square. */
+  launcherRadius?: number | string;
+  /** The launcher's own background. Defaults to `primaryColor`. */
+  launcherBg?: string;
+  /** The launcher glyph's colour. Defaults to `primaryContrast`. */
+  launcherFg?: string;
+  /**
+   * The launcher WHILE THE PANEL IS OPEN — the close affordance.
+   *
+   * Unset, that state INVERTS: the circle takes the panel background and the
+   * X takes `launcherBg`. Set these to keep the brand colour in both states,
+   * and set both together — a brand-coloured circle with a `launcherBg` X is
+   * usually invisible.
+   */
+  launcherOpenBg?: string;
+  launcherOpenFg?: string;
+  /** The launcher's size below 480px. */
+  launcherSizeSm?: number;
+  launcherLabelSize?: number | string;
+  // ── The two overlay palettes ──────────────────────────────────────
+  /**
+   * A second palette for dark mode, scoped to the widget’s own
+   * `scheme-dark` class and to `prefers-color-scheme` under `auto`.
+   *
+   * `colorScheme` chooses WHICH scheme applies; this says what the dark
+   * one looks like. Without it there was one palette per channel, so a
+   * brand-green header sat on a Chatly-navy panel in dark mode.
+   */
+  darkTheme?: WidgetThemeOverlay;
+  /**
+   * A palette for a view mounted inline — `mountTo`, or
+   * `Chatly('mount', …)`.
+   *
+   * A full-page assistant and a corner panel should not share one look:
+   * the panel’s chrome is designed to read as an overlay on somebody
+   * else’s page, and inline it is a block in their layout.
+   */
+  inlineTheme?: WidgetThemeOverlay;
+}
+
+/**
+ * An overlay PALETTE — a theme-within-a-theme, for `darkTheme` and
+ * `inlineTheme`.
+ *
+ * Deliberately not recursive and deliberately a SUBSET. Colours, shape, type
+ * and every token; not `position`, `offsetX/Y`, `panelWidth/Height`,
+ * `hideLauncher`, `hideBranding`, `icons` or `launcherIcon`. A widget does
+ * not move to the other corner in dark mode, `hideBranding` is a paid-tier
+ * answer the server owns, and `icons`/`launcherIcon` reach a markup sink that
+ * one script filter should guard in one place.
+ */
+export interface WidgetThemeOverlay {
+  primaryColor?: string;
+  primaryContrast?: string;
+  background?: string;
+  backgroundSubtle?: string;
+  foreground?: string;
+  foregroundMuted?: string;
+  border?: string;
+  bubbleAgentBg?: string;
+  bubbleAgentFg?: string;
+  dangerColor?: string;
+  successColor?: string;
+  warningColor?: string;
+  borderRadius?: number | string;
+  fontFamily?: string;
+  fontSize?: number | string;
+  headerStyle?: 'gradient' | 'solid' | 'plain' | 'light';
+  headerGradient?: [string, string];
+  // ── Cards (read by widget-commerce.css, the deferred chunk) ────────
+  cardBg?: string;
+  cardBorder?: string;
+  cardRadius?: number | string;
+  /** A `box-shadow` value — `0 2px 8px rgba(0,0,0,.08)`, or `none`. */
+  cardShadow?: string;
+  /** `aspect-ratio` for the card image, e.g. `4 / 3`. */
+  cardImageRatio?: string;
+  cardImageFit?: 'cover' | 'contain' | 'fill' | 'none' | 'scale-down';
+  cardPerView?: string;
+  /**
+   * Title lines before clamping, as a STRING: `'2'`.
+   *
+   * A string because the widget appends `px` to every number it is given
+   * — one code path, which is what `launcherSize` and `panelWidth` need —
+   * and `-webkit-line-clamp: 2px` is invalid at computed-value time, so
+   * the declaration would be dropped and the setting would do nothing.
+   */
+  cardTitleLines?: string;
+  cardPriceColor?: string;
+  cardPriceSize?: number | string;
+  cardBadgeBg?: string;
+  cardBadgeFg?: string;
+  /**
+   * The card's action buttons, as three colours rather than a
+   * `filled | outline | ghost` enum — CSS cannot branch on a custom
+   * property's value on this project's browser floor. `transparent`
+   * background with a brand foreground is the outline/ghost pair.
+   */
+  cardButtonBg?: string;
+  cardButtonBorder?: string;
+  cardButtonFg?: string;
+  // ── Quick-reply chips (also in the deferred chunk's stylesheet) ────
+  chipBg?: string;
+  chipFg?: string;
+  chipBorder?: string;
+  chipRadius?: number | string;
+  chipHoverBg?: string;
+  /** `nowrap` turns the chip row into a horizontal scroller. */
+  chipWrap?: 'wrap' | 'nowrap';
+  // ── Header geometry ───────────────────────────────────────────────
+  headerHeight?: number | string;
+  headerTitleSize?: number | string;
+  headerSubtitleSize?: number | string;
+  /** The logo and the close button only — hides the workspace name. */
+  headerLogoOnly?: boolean;
+  // ── Composer ──────────────────────────────────────────────────────
+  composerBg?: string;
+  composerBorder?: string;
+  composerRadius?: number | string;
+  composerPlaceholder?: string;
+  /** The attachment, emoji, dictation and voice-note buttons. */
+  composerIcon?: string;
+  composerSendBg?: string;
+  composerSendFg?: string;
+  composerButtonBg?: string;
+  /**
+   * The glyph colour inside those buttons. Falls through to `composerIcon`.
+   *
+   * Separate from `composerIcon` because a filled button's glyph does not sit
+   * on the composer's own background — see the server schema's note.
+   */
+  composerButtonFg?: string;
+  /** The icon buttons' own box, as a CSS length. `auto` is the glyph plus padding. */
+  composerButtonSize?: number | string;
+  // ── Type scale and density ────────────────────────────────────────
+  fontSizeSmall?: number | string;
+  headingSize?: number | string;
+  /** A unitless ratio as a STRING — `'1.4'` — or a length. */
+  lineHeight?: string;
+  density?: 'compact' | 'comfortable';
+  // ── Launcher ──────────────────────────────────────────────────────
+  /** A text label beside the icon — "Ask the shopping agent". */
+  launcherLabel?: string;
+  /** `999px` is a circle, `12px` a rounded square, `0` a square. */
+  launcherRadius?: number | string;
+  /** The launcher's own background. Defaults to `primaryColor`. */
+  launcherBg?: string;
+  /** The launcher glyph's colour. Defaults to `primaryContrast`. */
+  launcherFg?: string;
+  /**
+   * The launcher WHILE THE PANEL IS OPEN — the close affordance.
+   *
+   * Unset, that state INVERTS: the circle takes the panel background and the
+   * X takes `launcherBg`. Set these to keep the brand colour in both states,
+   * and set both together — a brand-coloured circle with a `launcherBg` X is
+   * usually invisible.
+   */
+  launcherOpenBg?: string;
+  launcherOpenFg?: string;
+  /** The launcher's size below 480px. */
+  launcherSizeSm?: number;
+  launcherLabelSize?: number | string;
 }
 
 export interface WidgetBehavior {

@@ -9,7 +9,8 @@
  *   lc.open();
  */
 
-import { createTypingTracker, newMessagesSince, typingActorOf } from './live.js';
+import { ChatlyError } from './errors.js';
+import { createSubscription } from './subscription.js';
 import { sumUnread } from './unread.js';
 
 import type {
@@ -30,6 +31,14 @@ export type {
   TypingSignal,
 } from './types.js';
 export { TYPING_STOP_AFTER_MS } from './live.js';
+/*
+ * The error every failure path now carries. `ChatlyError extends Error`, so
+ * nothing that caught an `Error` or read `.message` changes — the `code` is
+ * additive, and it is what tells a consumer "the realtime credential could
+ * not be refreshed" apart from "the list call 500'd".
+ */
+export { ChatlyError } from './errors.js';
+export type { ChatlyErrorCode } from './errors.js';
 /*
  * The snippet surface: `InitOptions`, `ChatlyApi`, `ChatlyGlobal` and the
  * shapes they name. Declared in `widget-globals.ts`, which also augments
@@ -107,6 +116,17 @@ export class Chatly {
    * gateway's payload requires an `actorId` and the visitor's is their contact.
    */
   private contactId: string | null = null;
+  /**
+   * Who to tell when the stored visitor session is REPLACED.
+   *
+   * `request()` absorbs a 403 `visitor_session_*` by dropping the dead token,
+   * re-initialising and replaying the call — which cures the REST surface and
+   * used to leave a live socket holding a realtime token minted for a session
+   * that no longer applies. Its next reconnect presented that token and was
+   * refused, silently, for the rest of the page. The only subscriber is a
+   * push subscription, which re-mints; see `realtime.ts`.
+   */
+  private readonly sessionListeners = new Set<() => void>();
 
   public static init(opts: SdkOptions): Chatly {
     return new Chatly(opts);
@@ -230,7 +250,9 @@ export class Chatly {
       body: file,
     });
     if (!put.ok) {
-      throw new Error(`Upload failed (${put.status})`);
+      throw new ChatlyError('upload_failed', `Upload failed (${put.status})`, {
+        httpStatus: put.status,
+      });
     }
     return {
       id: presigned.uploadId,
@@ -346,173 +368,67 @@ export class Chatly {
     handlers: SubscribeHandlers,
     options: SubscribeOptions = {},
   ): Subscription {
-    const seen = new Set<string>();
-    let stopped = false;
-    /** Set once the push socket is up; null on the polling path. */
-    let live: { emit: (event: string, payload: unknown) => void } | null = null;
-    let warnedAboutTyping = false;
-
     /*
-     * Receiving typing needs the same transport as sending it, and for the
-     * same reason: there is no HTTP route. A consumer who asked for
-     * `onTyping` on the polling path has asked for something the transport
-     * cannot carry, so say it once at subscribe time — the alternative is an
-     * agent typing visibly in the dashboard and nothing happening here, with
-     * nothing to search for.
+     * The body is `subscription.ts`, and the five capabilities below are the
+     * whole of what it needs from this class. Two are FUNCTIONS because they
+     * are read late: `/v1/widget/init` reports the realtime host and the
+     * contact id, and for an anonymous visitor it is this subscription that
+     * triggers that init — so a value read here is read before it exists.
      */
-    if (handlers.onTyping !== undefined && options.io === undefined) {
-      console.warn(
-        '[Chatly] onTyping needs the push path — pass `io` to subscribe(). ' +
-          'Typing is a socket event and has no HTTP route, so a polling ' +
-          'subscription never receives one.',
-      );
-    }
-    const typing = createTypingTracker({
-      onChange: (signal) => handlers.onTyping?.(signal),
-    });
-
-    const setTyping = (isTyping: boolean): void => {
-      if (live === null) {
-        if (!warnedAboutTyping) {
-          warnedAboutTyping = true;
-
-          console.warn(
-            '[Chatly] setTyping needs the push path — pass `io` to subscribe(). ' +
-              'Typing is a socket event and has no HTTP route.',
-          );
-        }
-        return;
-      }
-      live.emit(isTyping ? 'typing.start' : 'typing.stop', {
-        conversationId,
-        actorType: 'contact',
-        // The gateway's payload requires a non-empty actorId. `unknown` rather
-        // than an empty string, which its schema rejects outright.
-        actorId: this.contactId ?? 'unknown',
-      });
-    };
-
-    const deliver = (batch: readonly HeadlessMessage[]): void => {
-      for (const message of newMessagesSince(seen, batch)) {
-        handlers.onMessage?.(message);
-      }
-    };
-
-    const poll = async (): Promise<void> => {
-      if (stopped) {
-        return;
-      }
-      try {
-        deliver(await this.listMessages(conversationId));
-      } catch (err: unknown) {
-        handlers.onError?.(err);
-      }
-    };
-
-    // The first batch is the history, which is also how a consumer gets the
-    // existing thread without a separate call.
-    void poll();
-
-    if (options.io === undefined) {
-      // Floored: a one-second poll on a long conversation is a request every
-      // second per open tab, and the endpoint is not a stream.
-      const interval = Math.max(2_000, options.intervalMs ?? 6_000);
-      const timer = setInterval(() => void poll(), interval);
-      return Object.assign(
-        () => {
-          stopped = true;
-          clearInterval(timer);
-          // Nothing can have started the tracker on this path — but a
-          // teardown that only cleans up the branch it remembers is how a
-          // timer outlives its subscription.
-          typing.dispose();
-        },
-        { setTyping },
-      );
-    }
-
-    let socket: { disconnect: () => void } | null = null;
-    // Captured before the async gap so the narrowing holds without an
-    // assertion: `options` is readonly, but the checker cannot know that
-    // across an await.
-    const makeSocket = options.io;
-    void (async () => {
-      try {
-        await this.ensureVisitorToken();
-        const res = await this.request('/v1/widget/realtime/token', {
-          publicId: this.opts.publicId,
-          visitorToken: this.visitorToken,
-          conversationId,
-        });
-        const { token } = (await res.json()) as { token?: string };
-        const host = this.opts.realtimeUrl ?? this.realtimeUrl;
-        if (stopped || typeof token !== 'string' || host === null || host === undefined) {
-          /*
-           * No host means no socket. Reported rather than silently falling
-           * back, because a consumer who passed `io` asked for push and a
-           * quiet downgrade to polling would look like push that is slow.
-           */
-          handlers.onError?.(
-            new Error('chatly: no realtime host — set `realtimeUrl` in init options'),
-          );
-          return;
-        }
-        const made = makeSocket(host, {
-          path: '/socket.io',
-          transports: ['websocket'],
-          auth: { token, kind: 'visitor' },
-        });
-        socket = made;
-        live = made;
-        made.on('event', (raw: unknown) => {
-          const envelope = raw as { type?: string; payload?: unknown } | null;
-          if (envelope?.type === 'message.created' && envelope.payload !== undefined) {
-            deliver([envelope.payload as HeadlessMessage]);
-            /*
-             * A reply has arrived, so whoever was typing has stopped — the
-             * dashboard sends `typing.stop` on send, but the message and the
-             * stop are two envelopes and the message usually wins the race.
-             * Without this the indicator sits under the message that was
-             * being typed, for the length of the timeout.
-             */
-            typing.stop();
-            return;
-          }
-          if (envelope?.type === 'typing.start' || envelope?.type === 'typing.stop') {
-            const actor = typingActorOf(envelope.payload);
-            if (actor === null) {
-              return;
-            }
-            if (envelope.type === 'typing.start') {
-              typing.start(actor);
-            } else {
-              typing.stop(actor);
-            }
-          }
-        });
-      } catch (err: unknown) {
-        /*
-         * Push could not be set up. Fall back to polling rather than leaving
-         * the consumer with a subscription that silently never fires — the
-         * same choice the widget makes when its realtime chunk cannot load.
-         */
-        handlers.onError?.(err);
-        if (!stopped) {
-          const timer = setInterval(() => void poll(), 6_000);
-          socket = { disconnect: () => clearInterval(timer) };
-        }
-      }
-    })();
-
-    return Object.assign(
-      () => {
-        stopped = true;
-        live = null;
-        typing.dispose();
-        socket?.disconnect();
+    return createSubscription(
+      {
+        listMessages: (id) => this.listMessages(id),
+        mintRealtimeToken: (id) => this.mintRealtimeToken(id),
+        realtimeHost: () => this.opts.realtimeUrl ?? this.realtimeUrl,
+        contactId: () => this.contactId,
+        onSessionReplaced: (fn) => this.onSessionReplaced(fn),
       },
-      { setTyping },
+      conversationId,
+      handlers,
+      options,
     );
+  }
+
+  /**
+   * `POST /v1/widget/realtime/token` — ONE conversation, HS256, 1h TTL.
+   *
+   * Not `session.token` from `/v1/widget/init`: that is the long-lived
+   * visitor credential every REST body carries and the realtime gateway does
+   * not accept it at all (`docs/prompts/5/mobile-sdk-visitor-contract.md`
+   * §1). Going through `request()` is what makes the stale-session recovery
+   * apply to the mint as well as to everything else.
+   */
+  private async mintRealtimeToken(conversationId: string): Promise<string> {
+    await this.ensureVisitorToken();
+    const res = await this.request('/v1/widget/realtime/token', {
+      publicId: this.opts.publicId,
+      visitorToken: this.visitorToken,
+      conversationId,
+    });
+    const { token } = (await res.json()) as { token?: string };
+    if (typeof token !== 'string' || token.length === 0) {
+      throw new ChatlyError(
+        'realtime_token_failed',
+        'chatly: /v1/widget/realtime/token answered no token',
+      );
+    }
+    return token;
+  }
+
+  /**
+   * Tell me when the stored visitor session is replaced. Returns the
+   * unregister.
+   *
+   * Private because it is plumbing rather than product: the only subscriber
+   * is `realtime.ts`, whose minted token belongs to the session that was just
+   * thrown away. Exposing it publicly would be a surface to support for one
+   * internal caller.
+   */
+  private onSessionReplaced(fn: () => void): () => void {
+    this.sessionListeners.add(fn);
+    return () => {
+      this.sessionListeners.delete(fn);
+    };
   }
 
   /** Submit a post-chat satisfaction score (1-5, or 0-10 for NPS). */
@@ -553,10 +469,39 @@ export class Chatly {
     localStorage.setItem(`livechat:vt:${this.opts.publicId}`, token);
   }
 
+  /**
+   * The `/v1/widget/init` in flight, if any.
+   *
+   * Without this, `ensureVisitorToken` is not safe to call twice before the
+   * first one lands — and `subscribe()` does exactly that, firing the history
+   * poll and the realtime-token mint in the same tick on a browser with no
+   * stored token. Two inits is two anonymous SESSIONS: the second overwrites
+   * the first, so the thread the consumer was handed and the conversation the
+   * realtime token is scoped to belonged to two different contacts. Found by
+   * the session-replacement test in `realtime.spec.ts`, which counts inits.
+   */
+  private initializing: Promise<void> | null = null;
+
   private async ensureVisitorToken(): Promise<void> {
     if (this.visitorToken !== null) {
       return;
     }
+    if (this.initializing !== null) {
+      await this.initializing;
+      return;
+    }
+    const run = this.initVisitorSession();
+    this.initializing = run;
+    try {
+      await run;
+    } finally {
+      if (this.initializing === run) {
+        this.initializing = null;
+      }
+    }
+  }
+
+  private async initVisitorSession(): Promise<void> {
     const res = await this.request('/v1/widget/init', { publicId: this.opts.publicId });
     const body = (await res.json()) as {
       session: { token: string; contactId?: string | null };
@@ -596,13 +541,27 @@ export class Chatly {
         this.visitorToken = null;
         localStorage.removeItem(`livechat:vt:${this.opts.publicId}`);
         await this.ensureVisitorToken();
+        /*
+         * A new session exists, so every credential derived from the old one
+         * is dead — including the conversation-scoped realtime token a live
+         * socket is holding. Announced here, AFTER the new session is in
+         * hand and BEFORE the replay, so a re-mint can overlap the replay
+         * rather than queue behind it. Fired and not awaited: a subscriber's
+         * failure is its own to report and must not turn one recovered call
+         * into a failed one.
+         */
+        for (const listener of this.sessionListeners) {
+          listener();
+        }
         const replayed = { ...(body as Record<string, unknown>) };
         if (replayed['visitorToken'] !== undefined) {
           replayed['visitorToken'] = this.visitorToken;
         }
         return this.request(path, replayed, true);
       }
-      throw new Error(`Chatly SDK request failed: ${res.status}`);
+      throw new ChatlyError('request_failed', `Chatly SDK request failed: ${res.status}`, {
+        httpStatus: res.status,
+      });
     }
     return res;
   }

@@ -49,23 +49,6 @@
  * boundary that exists.
  */
 
-/**
- * Identity the host page already knows about this visitor.
- *
- * `externalId` is the only field identity verification can bind, and the only
- * field contacts are matched on — without it every visit creates a new
- * contact. `userHash` is `HMAC-SHA256(<channel IDV secret>, externalId)`,
- * computed by YOUR SERVER; never in the browser, where the secret would be in
- * your page source.
- */
-export interface WidgetIdentity {
-  externalId?: string;
-  email?: string;
-  name?: string;
-  userHash?: string;
-  attributes?: Record<string, unknown>;
-}
-
 /*
  * The method payload shapes live in `./widget-payloads.js` and are
  * re-exported here, unchanged, so the published surface is identical.
@@ -82,12 +65,16 @@ export interface WidgetIdentity {
  */
 // `WidgetQuip` is NOT imported here: it is re-exported below but never
 // referenced in this file, and an unused import is a lint error.
+import type { ChatlyApi, ChatlyConsent } from './widget-api.js';
 import type {
   WidgetBehavior,
   WidgetCopy,
   WidgetQuickLink,
   WidgetTheme,
 } from './widget-appearance.js';
+// Imported for use in `InitOptions` and `ChatlyApi` below AND re-exported
+// unchanged, so the published surface is identical to before the split.
+import type { WidgetIdentity } from './widget-identity.js';
 import type {
   ChatlyEventHandler,
   OpenRequest,
@@ -106,6 +93,8 @@ export type {
   WidgetQuip,
   WidgetTheme,
 } from './widget-appearance.js';
+
+export type { WidgetIdentity };
 
 export type {
   ChatlyEventHandler,
@@ -146,6 +135,17 @@ export type ChatlyEventName =
   | 'identified'
   | 'reset'
   /**
+   * Which per-audience PROFILE matched, or that none did.
+   *
+   * `{ profile, matched }` — the operator-facing name, and whether any
+   * applied. BOTH, because a profile left unnamed reports `matched: true`
+   * with a null name, which is not "none did". Fires when the match resolves
+   * (after `init`) and again when it CHANGES; deduped; never for a
+   * `Chatly('mount', …)` view.
+   */
+  | 'profile'
+
+  /**
    * A visitor pressed a `host_event` action on a rich block.
    *
    * Detail is `{ event, data }` — a NAME and JSON, nothing executable. This
@@ -154,8 +154,38 @@ export type ChatlyEventName =
    *
    * An event is a REQUEST, not an authorisation: a site that wires a button
    * to something destructive has chosen that.
+   *
+   * ── A bot can fire one too, without a press ───────────────────────────
+   *
+   * When your page registered a capability with `Chatly('setContext', {
+   * surface: { capabilities: [{ name, unprompted: true, … }] } })`, a bot may
+   * fire it unprompted. The detail is the SAME `{ event, data }` plus
+   * `conversationId`, `messageId` and `actionId` (the invocation's id), and
+   * additionally `source: 'bot'` and `surfaceId`. A press carries no `source`
+   * key. One handler serves both; check `source` if you want to treat an
+   * unprompted action differently.
+   *
+   * Your handler is the gate on your side. To decline, report back with
+   * `Chatly('reportAction', { messageId, actionId, status: 'failed', data: {
+   * refused: true } })` — two refusals of one capability within ten minutes
+   * stop the bot firing it in that conversation.
    */
   | 'action'
+  /**
+   * A visitor pressed a `navigate` action on a rich block: go to a page of
+   * YOUR site.
+   *
+   * Detail is `{ path, label, conversationId, messageId, actionId }`. `path`
+   * is a validated site-relative path (`/pricing?plan=pro`) that starts with a
+   * single `/` and holds no host, `//`, backslash, control character or `..`
+   * segment, so it is safe to hand to your router's `push`. Subscribing is how
+   * you take over the navigation (a single-page app should not reload).
+   * With NO `navigate` handler the widget opens `location.origin + path` in
+   * the current tab itself. The window event `chatly:navigate` mirrors the
+   * callback but does not count as a handler: only `on('navigate', …)` (or
+   * `onNavigate` on the wrappers) suppresses the fallback.
+   */
+  | 'navigate'
   | 'error'
   /**
    * The server stored the visitor's message (W-09). Detail is
@@ -178,7 +208,8 @@ export type ChatlyEventName =
    * Replayed to a late subscriber, like `ready`. Never fires for a visitor
    * who has never had a conversation.
    */
-  | 'unread';
+  | 'unread'
+  | 'appearance';
 
 /**
  * Complete public API for the widget loader. Everything visible or
@@ -191,7 +222,11 @@ export type ChatlyEventName =
  * A subset of `InitOptions`, and the omissions are the design. `mountTo` is
  * replaced by `el`, since a view is always inline. `storage` is absent
  * because there is one answer per visitor to "may this browser be written
- * to", set by `init`; a second, conflicting one is not a thing to offer. `on`
+ * to", set by `init`; a second, conflicting one is not a thing to offer.
+ * `tracking` is absent for the same reason and one more: the feeds it governs
+ * describe the PAGE, and a secondary view does not report them at all
+ * (`pageLevel` in `useVisitorTelemetry`), so a `tracking` here would be a
+ * control that appears to work. `on`
  * is absent because the lifecycle callbacks belong to the primary widget, and
  * a view that installed its own would make `on('message')` ambiguous. Most of
  * `behavior` is absent because the rest of it describes the PAGE —
@@ -199,7 +234,7 @@ export type ChatlyEventName =
  * somebody else's layout has no business deciding.
  */
 export interface MountOptions
-  extends Omit<InitOptions, 'publicId' | 'mountTo' | 'storage' | 'on' | 'behavior'> {
+  extends Omit<InitOptions, 'publicId' | 'mountTo' | 'storage' | 'tracking' | 'on' | 'behavior'> {
   /** Where to render. A selector or an element; it must already exist. */
   el: string | Element;
   /** The channel this view talks to. Defaults to the primary widget's. */
@@ -260,7 +295,7 @@ export interface InitOptions {
 
   /**
    * Whether the widget may use the visitor's browser storage. Default
-   * `'allow'`.
+   * **`'on-open'`** since 2026-10-19 — it was `'allow'`.
    *
    * `'deny'` makes every read return nothing and every write a no-op, and
    * PURGES anything already written — the visitor token and its hash, the
@@ -273,8 +308,14 @@ export interface InitOptions {
    * survive a reload, which is the same degradation as a browser with site
    * data blocked.
    *
-   * It is opt-out rather than opt-in because the alternative would change
-   * behaviour for every embed that already exists.
+   * `'allow'` is the eager mode, and it is now the one you opt IN to. It
+   * used to be the default, which meant an embed that said nothing about
+   * storage wrote `chatly:seen` and the visitor's session token on page load
+   * and sent a `POST /v1/widget/events` per page view — for visitors who
+   * never opened the chat and, under a consent banner, had agreed to
+   * nothing. If you want that (a session that survives a reload for every
+   * passer-by, and the live-visitor list populated by everyone rather than
+   * by the people who engaged), say `'allow'`.
    *
    * While storage is withheld, the marketing query family — `utm_*`,
    * `gclid`, `fbclid`, `msclkid`, `ttclid` — is also STRIPPED from every page
@@ -290,8 +331,146 @@ export interface InitOptions {
    * engagement. A visitor who engaged on an earlier page has storage from the
    * start, so their thread survives navigation. Until they engage, the
    * stripping above applies.
+   *
+   * It also holds back the widget's OWN telemetry — the `visitor.page_view`,
+   * `returned`, exit-intent and scroll-depth events — until the same moment,
+   * under `'on-open'` and `'deny'` alike. They are buffered rather than
+   * dropped, so a visitor who browses three pages and then opens the chat
+   * still arrives with the page view carrying the entry referrer.
+   * `Chatly('track', ...)` is never held back: that is your call about your
+   * own user.
+   *
+   * ── Per category ────────────────────────────────────────────────────
+   *
+   * The object form sets the three categories separately:
+   * `storage: { functional: 'on-open', analytics: 'deny', marketing: 'deny' }`.
+   * A category the object OMITS gets the same `'on-open'` an absent `storage`
+   * gets, rather than inheriting a sibling — a partial object is a partial
+   * statement, and reading `{ analytics: 'deny' }` as "allow everything
+   * else" would make the strictest-looking declaration the most permissive.
+   *
+   * Which key holds which: `functional` is the session (the visitor token,
+   * its hash, the external id, the launcher's dragged position),
+   * `analytics` is `chatly:seen` AND the widget's own `visitor.*` telemetry,
+   * `marketing` is the `chatly:utm` attribution entry. These three are
+   * Chatly's own names and the only ones it knows: if your consent manager
+   * calls them something else, map its answer onto them yourself —
+   * `Chatly('setStorageConsent', { analytics: cmp.hasConsent(<their id>) })`.
    */
-  storage?: 'allow' | 'deny' | 'on-open';
+  storage?:
+    | 'allow'
+    | 'deny'
+    | 'on-open'
+    | {
+        functional?: 'allow' | 'deny' | 'on-open';
+        analytics?: 'allow' | 'deny' | 'on-open';
+        marketing?: 'allow' | 'deny' | 'on-open';
+      };
+
+  /**
+   * Who decides where the widget may store things: the page's consent
+   * manager, or a decision you already have. Read by the LOADER from the
+   * queued `init` — write `Chatly('init', { consent })` beside the snippet —
+   * so the widget's first write already goes to the right place.
+   *
+   * `'auto'` reads the manager on the page: Cookie Munch, Cookiebot,
+   * OneTrust, Osano, Complianz, CookieYes, any IAB TCF v2.2 CMP, or Google
+   * Consent Mode, first found wins. Until it answers, storage is held to this
+   * visit (`sessionStorage`); with no manager found it stands down after 8s.
+   *
+   * An object is a decision your server already knows — the same shape as
+   * `Chatly('setConsent', …)`, applied as the widget starts.
+   *
+   * See /guides/consent.
+   */
+  consent?: 'auto' | ChatlyConsent;
+  /**
+   * Under `consent: 'auto'` with Cookie Munch, the category that governs
+   * storage. Default `'support_chat'`; any other category is ordinary opt-in,
+   * so refusing it denies storage.
+   */
+  consentCategory?: string;
+
+  /**
+   * `'grant'` is the site's own statement that visit analytics may be sent
+   * with no consent manager in the way — for a site outside any consent
+   * regime. Without it, and without a consent decision that grants
+   * `analytics`, the widget's `visitor.*` telemetry is held and never sent.
+   * An explicit `storage: { analytics: 'deny' }` or a later withdrawal still
+   * wins. See /guides/consent.
+   */
+  analytics?: 'grant';
+
+  /**
+   * Whether the widget may produce its OWN behavioural telemetry — the
+   * `visitor.page_view`, `visitor.returned`, `visitor.exit_intent`,
+   * `visitor.scroll_depth` and `visitor.idle_threshold` events, and the
+   * `chatly:seen` key behind `returned`.
+   *
+   * `tracking: false` turns all five off: no listener is attached to your
+   * page, `chatly:seen` is never written, and nothing named `visitor.*`
+   * reaches `POST /v1/widget/events`. The chat itself is untouched.
+   *
+   * `tracking: { visits: false }` / `{ exitIntent: false }` /
+   * `{ scrollDepth: false }` turn one feed off and leave the others at their
+   * default. `visits` covers the three visit-level events —
+   * `visitor.page_view`, `visitor.returned`, `visitor.idle_threshold`; the
+   * other two keys each name one gesture. A key the object omits keeps its
+   * default; a value that is neither `true` nor absent reads as OFF, because
+   * a privacy switch must not be rescued by a typo.
+   *
+   * ── The DEFAULT is your visitor's analytics consent, not this option ──
+   *
+   * Leaving `tracking` unset does not mean "on". Visit telemetry is OPT-IN
+   * (since 0.19.0): every event above is held, and not sent, until ANALYTICS
+   * consent is affirmatively granted — by `consent: 'auto'` reading a consent
+   * manager, `Chatly('setConsent', { analytics: true })`,
+   * `Chatly('setStorageConsent', …)`, `storage: { analytics: 'allow' }` or
+   * `analytics: 'grant'`. Opening the chat grants the storage the chat needs
+   * and NOT analytics. `storage: { analytics: 'deny' }` reports nothing at
+   * all. This option is
+   * how an operator says no on their visitors' behalf — it can only ever
+   * subtract from what consent already permits, and `tracking: true` is just
+   * the explicit spelling of the default rather than an override of consent.
+   *
+   * `Chatly('track', …)` is never affected: that is your own call about your
+   * own user.
+   */
+  tracking?:
+    | boolean
+    | {
+        visits?: boolean;
+        exitIntent?: boolean;
+        scrollDepth?: boolean;
+      };
+
+  /**
+   * What to do when the channel REFUSES the identity in `visitor` (or in a
+   * later `identify()`): `'anonymous'` continues as an unverified, anonymous
+   * visitor. The default is to show the visitor a failed widget, which is
+   * what happened before this option existed and is still right for an app
+   * where an unverified chat is worse than no chat.
+   *
+   * It exists because a single rotated or misdeployed `userHash` secret
+   * removes chat for every signed-in visitor at once: `POST
+   * /v1/widget/init` answers 403, there is no session, and the panel cannot
+   * open. With this set, the widget drops the claim and the session this
+   * browser was holding, re-boots with no identity at all, and the visitor
+   * gets a working chat that the agent sees as anonymous.
+   *
+   * It NEVER continues as the claimed identity — an unverifiable claim is
+   * exactly what the channel's identity verification exists to refuse, and
+   * honouring it on the client would make the setting a bypass. So the
+   * conversation is not attached to `externalId`, `session.identityVerified`
+   * is false, and anything keyed on `contact.identityVerified` behaves as it
+   * does for a visitor who never signed in.
+   *
+   * Either way an `error` event fires first, with
+   * `{ code: 'identity_rejected' | 'identity_missing_hash', status }` —
+   * subscribe before `init` and you will catch it, which is how you find out
+   * your secret is wrong without reading a visitor's console.
+   */
+  identityFallback?: 'anonymous';
 
   /** Free-form CSS injected into the shadow root. Last word on styling. */
   cssOverrides?: string;
@@ -334,186 +513,6 @@ export interface InitOptions {
     }) => void;
   };
 }
-/**
- * The complete `window.Chatly` surface.
- *
- * Five of these — init, destroy, open, close, toggle — are the original,
- * unchanged contract. The rest exist because identity used to be readable
- * only at boot: a site that learns who its visitor is after they sign in had
- * no way to tell us at all.
- *
- * Every method here is backed by something the API can actually do. Two the
- * competitor offers are deliberately ABSENT, because ours could not honour
- * them and a method that silently does nothing is worse than its absence:
- *
- *  - `setConversationCustomAttributes` — `conversations` has a `tags` column
- *    and no attributes column. Use `setLabel` (also conversation-level, and
- *    the agent inbox renders it).
- *  - `popoutChatWindow` — there is no standalone conversation page to pop out
- *    into; the widget only exists inside the host page's shadow root.
- */
-export interface ChatlyApi {
-  init: (opts: InitOptions) => void;
-  destroy: () => void;
-  /**
-   * `open()`, `open('help')`, or `open({ view: 'conversation', botSlug })`.
-   *
-   * The object form opens the panel ON a conversation rather than on a tab,
-   * which is what a page's own "Ask the shopping agent" button needs — the
-   * tab form would land the visitor on the home screen with the conversation
-   * one more click away.
-   *
-   * It does NOT send `initialMessage`; the composer is pre-filled and the
-   * visitor presses send. Same contract a quick-link's `initialMessage` has
-   * always had, and the reason a page can offer the button without putting
-   * words in the visitor's mouth.
-   */
-  open: (target?: 'home' | 'messages' | 'help' | OpenRequest) => void;
-  close: () => void;
-  /** No argument flips. `'open'`/`true` opens, `'close'`/`false` closes. */
-  toggle: (state?: 'open' | 'close' | boolean) => void;
-  /** Attach a known identity at any point after load. */
-  identify: (identity: WidgetIdentity) => Promise<SessionSnapshot>;
-  /** `identify` in the `setUser(id, attrs)` spelling. */
-  setUser: (externalId: string, attributes?: Record<string, unknown>) => Promise<SessionSnapshot>;
-  setCustomAttributes: (attributes: Record<string, unknown>) => void;
-  deleteCustomAttribute: (key: string) => void;
-  setLabel: (label: string) => void;
-  removeLabel: (label: string) => void;
-  setLocale: (locale: string) => void;
-  /** Fire a visitor event into the CDP / workflow trigger stream. */
-  track: (name: string, properties?: Record<string, unknown>) => void;
-  /**
-   * Hand over a device push token, so a reply reaches this visitor after
-   * they close the app. For a native app embedding this widget — it passes
-   * the token the OS gave it. The widget takes a token rather than asking for
-   * notification permission itself: the host app owns that prompt.
-   */
-  registerPushToken: (
-    platform: 'apns' | 'fcm' | 'web-push',
-    token: string,
-    appVersion?: string,
-  ) => void;
-  /**
-   * Open a NEW conversation, optionally routed and optionally pre-filled.
-   *
-   * `Chatly('open', { view: 'conversation', … })` is the same thing said the
-   * other way round, and both land on one implementation. Two spellings
-   * because a page thinking "open the chat here" and a page thinking "start a
-   * conversation with the shopping agent" are two different thoughts, and
-   * offering only the first made the second read as a hack.
-   */
-  startConversation: (request?: StartConversationRequest) => void;
-  /**
-   * Tell us what this page claims about the visitor.
-   *
-   * `audience` is UNSIGNED and lands in `context.unverified.audience` — the
-   * visitor can set it themselves from the console, because the widget is on
-   * their page. `contextToken` is a JWT your SERVER signs with the channel's
-   * identity-verification secret, and its claims land in
-   * `context.verified.*`, which is the only bag a privilege decision may rest
-   * on. Call it again on every SPA navigation, or let the widget do it: it
-   * re-sends the page on each navigation by itself.
-   */
-  setContext: (input: SetContextInput) => void;
-  /**
-   * Report what your page did with a `host_event`, back into the thread.
-   *
-   * Appends a visible line under the card whose button was pressed, and
-   * delivers an `action_result` to the bot that sent it. Pass back the
-   * `messageId` and `actionId` the `action` event handed you. Reporting the
-   * same action twice replaces the first result rather than stacking, so a
-   * retry leaves one line.
-   */
-  reportAction: (input: ReportActionInput) => void;
-  /** Forget this visitor and boot a fresh anonymous session. */
-  reset: () => void;
-  /**
-   * Grant or withhold consent to use the visitor's browser storage.
-   *
-   * The call a consent banner makes. Withholding purges what is already
-   * stored; granting allows writes from that moment on and replays nothing,
-   * because there is nothing to recover. See the `storage` init option.
-   */
-  setStorageConsent: (granted: boolean) => void;
-  /**
-   * Move the widget and its panel after boot — the live form of
-   * `theme.offsetX`, `theme.offsetY` and `theme.panelOffsetY`.
-   *
-   * `x` and `y` move the host element in its corner; `panelY` moves the
-   * panel's bottom edge up from it, which is the number a page with its own
-   * launcher button needs (see `WidgetTheme.panelOffsetY`). Every key is
-   * optional; anything that is not a finite number is left as it was, and a
-   * call that changes nothing warns.
-   *
-   * It does not close an open panel and emits no `open` or `close` — a
-   * positional change is not a visibility change.
-   *
-   * `x` is measured from whichever side `theme.position` chose. It has no
-   * effect under `mountTo`/`inline`, where the widget is a block in your own
-   * layout and the corner offsets never applied in the first place.
-   */
-  setOffset: (offset: { x?: number; y?: number; panelY?: number }) => void;
-  /**
-   * The unread count the launcher badge shows (W-06): agent and bot messages
-   * this visitor has not had on screen. 0 before it is known. Subscribe to
-   * `unread` to be told when it changes.
-   */
-  getUnreadCount: () => number;
-  /**
-   * Whether this browser holds a conversation for this channel (W-07) — a
-   * RETURNING chatter. False under `storage: 'deny'` until consent, because
-   * nothing is kept. `loader.js` answers it before the widget has loaded, by
-   * the same test, which is how lazy mode loads eagerly for these visitors.
-   */
-  hasSession: () => boolean;
-  /**
-   * Add a SECOND widget view, inline in the page, beside the launcher.
-   *
-   * `mountTo` on `init` relocates the one widget into a container, which
-   * means choosing between an embedded chat and a floating launcher. This
-   * adds a view instead, so a page can carry both: a full-page assistant at
-   * `/shop/assistant` and the support launcher in the corner of every page
-   * including that one.
-   *
-   * ── Give the view its own channel ───────────────────────────────────────
-   *
-   * `publicId` defaults to the primary widget's, and passing a different one
-   * is the point of the feature. A view on its own channel gets its own
-   * session, its own thread and — this is the part that matters — its own
-   * OPERATOR-CONFIGURED bot route, decided on the server where a visitor
-   * cannot reach it.
-   *
-   * There is deliberately no `botSlug` here. That would travel as the
-   * unsigned claim `context.unverified.bot`, and the context row it writes is
-   * keyed per visitor per CHANNEL and replaced wholesale on every write — so
-   * two views on one channel cannot each hold their own bot, and the second
-   * would re-point the first's next conversation while wiping whatever
-   * `audience` the page had set. A forgeable hint is also the wrong place for
-   * a routing decision as soon as the two assistants differ in what they may
-   * reach, which a shopping agent that can look up orders does.
-   *
-   * ── What a view shares ──────────────────────────────────────────────────
-   *
-   * Shared, being facts about the person: identity (`identify()` reaches
-   * every view), the chosen locale, storage consent. Not shared: the session,
-   * the conversation, the context bag, the panel state. And a view never
-   * takes over the published surface — `open()`, `track()`, `on('message')`
-   * and the launcher's unread badge all stay with the primary widget.
-   *
-   * Refused, loudly, with the reason named: before `init`, on a container
-   * that does not exist, and on a container that already holds a view.
-   */
-  mount: (opts: MountOptions) => void;
-  /** Remove a view added by `mount`. Unknown containers are ignored. */
-  unmount: (el: string | Element) => void;
-  /** Subscribe. `'ready'` replays immediately if it already happened. */
-  on: (event: ChatlyEventName, handler: ChatlyEventHandler) => void;
-  off: (event: ChatlyEventName, handler: ChatlyEventHandler) => void;
-  /** Set by the loader snippet; read here only so the type stays honest. */
-  q?: unknown[];
-  publicId?: string;
-}
 
 /**
  * `window.Chatly` is BOTH the method object and still callable as
@@ -531,6 +530,8 @@ export interface ChatlyApi {
  * and after load (dispatched), which is the only version of this that an
  * embedder can reason about.
  */
+export type { ChatlyApi, ChatlyConsent } from './widget-api.js';
+
 export type ChatlyGlobal = ChatlyApi & ((...args: unknown[]) => void);
 
 /**
