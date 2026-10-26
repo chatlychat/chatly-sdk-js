@@ -1,5 +1,15 @@
 # @chatlychat/sdk-js — changelog
 
+## 0.22.0 — 2026-10-26
+
+`WidgetTheme.colorScheme` accepts `'host'`, and a new `hostScheme`
+(`{ on?, attribute? }`) says where it looks. This is the widget's own theme
+type, so without it a `<ChatlyWidget theme={{ colorScheme: 'host' }}>` would
+not typecheck for anyone importing from here —
+`check-widget-wrapper-parity.mjs` compares this type against the wrapper's in
+both directions precisely so a prop cannot be accepted by one and unknown to
+the other.
+
 ## 0.21.0 — 2026-10-26
 
 New event `notice`: `Chatly('on', 'notice', ({ conversationId, replyTo, body }) => …)` hears the ephemeral one-line notice a bot sends to answer a silent postback (`chatly:notice` on `window`). The widget still draws its own five-second toast. Nothing is stored, so it fires only for a visitor connected at that moment. `navigate` is now also accepted as a card's image/title tap target and as a grid's `more` tile (the `CardTapAction` and `PagingAction` unions).

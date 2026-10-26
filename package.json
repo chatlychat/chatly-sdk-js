@@ -1,6 +1,6 @@
 {
   "name": "@chatlychat/sdk-js",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "description": "Browser SDK for Chatly — identify visitors, fire CDP events, control the widget, run a conversation headlessly, and type window.Chatly.",
   "license": "MIT",
   "homepage": "https://github.com/chatlychat/chatly-sdk-js#readme",
@@ -41,7 +41,7 @@
   "sideEffects": false,
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsgo -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
   "publishConfig": {
@@ -52,6 +52,8 @@
     "node": ">=18"
   },
   "devDependencies": {
+    "@typescript/native-preview": "^7.0.0-dev.20251023.1",
+    "happy-dom": "^15.11.7",
     "jsdom": "^30.0.1",
     "typescript": "^5.6.2",
     "vitest": "^2.1.2"

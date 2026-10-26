@@ -117,8 +117,32 @@ export interface WidgetTheme {
   launcherIdleAnimation?: 'none' | 'wiggle' | 'pulse' | 'bounce';
 
   // ── Color scheme ────────────────────────────────────────────────────
-  /** 'light' | 'dark' | 'auto' (matches prefers-color-scheme). */
-  colorScheme?: 'light' | 'dark' | 'auto';
+  /**
+   * `'auto'` matches `prefers-color-scheme`. `'host'` follows the PAGE's own
+   * light/dark switch instead, so a site with a theme toggle needs no
+   * `MutationObserver` of its own — see `hostScheme` for where it looks.
+   *
+   * `'host'` is EMBED-SNIPPET ONLY. The channel schema
+   * (`@livechat/shared/widget-config`) is `z.enum(['light','dark','auto'])`,
+   * so a workspace cannot select it in the dashboard, and `setTheme` does not
+   * honour it either — an explicit `light` or `dark` pushed live still wins.
+   * Widening the channel schema is a separate change that needs the dashboard
+   * appearance editor with it.
+   */
+  colorScheme?: 'light' | 'dark' | 'auto' | 'host';
+  /**
+   * Where `colorScheme: 'host'` looks. `on` is a CSS selector (default
+   * `html`); `attribute` is the attribute to read (default: `data-theme`,
+   * then `class`, then the computed CSS `color-scheme`). A value containing
+   * `dark` or `light` decides; both (`light dark`) or neither means "ask the
+   * OS", which is also what happens before the watcher has answered.
+   *
+   * Declared here as well as on `ChatlyTheme` because
+   * `check-widget-wrapper-parity.mjs` compares the two in BOTH directions:
+   * a field the wrapper accepts and the widget does not is a prop that
+   * typechecks and does nothing.
+   */
+  hostScheme?: { on?: string; attribute?: string };
 
   /**
    * State colours. Only these three, because the widget renders each one:
