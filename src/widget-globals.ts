@@ -186,6 +186,18 @@ export type ChatlyEventName =
    * `onNavigate` on the wrappers) suppresses the fallback.
    */
   | 'navigate'
+  /**
+   * A bot sent an ephemeral notice (`kind: 'notice'`) answering a silent
+   * postback. Detail is `{ conversationId, replyTo, body }`: `replyTo` is the
+   * id of the visitor message it answers, `body` one line of plain text.
+   *
+   * The widget draws its own five-second toast in the typing slot as well;
+   * this is the page's copy, for a host that wants its own toast. Nothing is
+   * stored, so it fires only for a visitor connected at that moment, and
+   * never for the thread you are not looking at. Does not suppress the
+   * widget's toast. The window event is `chatly:notice`.
+   */
+  | 'notice'
   | 'error'
   /**
    * The server stored the visitor's message (W-09). Detail is

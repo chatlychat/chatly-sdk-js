@@ -1,5 +1,9 @@
 # @chatlychat/sdk-js — changelog
 
+## 0.21.0 — 2026-10-26
+
+New event `notice`: `Chatly('on', 'notice', ({ conversationId, replyTo, body }) => …)` hears the ephemeral one-line notice a bot sends to answer a silent postback (`chatly:notice` on `window`). The widget still draws its own five-second toast. Nothing is stored, so it fires only for a visitor connected at that moment. `navigate` is now also accepted as a card's image/title tap target and as a grid's `more` tile (the `CardTapAction` and `PagingAction` unions).
+
 ## 0.20.0 — 2026-10-26
 
 New event `navigate`: `Chatly('on', 'navigate', fn)` receives `{ path, label, conversationId, messageId, actionId }` when a visitor presses a `navigate` card action, and `path` is a validated site-relative path (`/pricing?plan=pro`) you can pass to your router. Registering a handler is what stops the widget navigating itself; with none it opens `location.origin + path` in the current tab. `chatly:navigate` mirrors it on `window` but does not count as a handler.
