@@ -287,3 +287,34 @@ export type Subscription = (() => void) & {
    */
   setTyping: (isTyping: boolean) => void;
 };
+
+/**
+ * One hit from `searchArticles`.
+ *
+ * `excerpt` is a plain-text snippet around the match with no highlight
+ * markup, so a host page can render it into its own element without
+ * sanitising. `sourceUrl` is where the article is published, if the
+ * workspace publishes a help centre at all — null is the common case and
+ * means "there is nowhere to send the reader but the widget".
+ */
+export interface KbArticleHit {
+  id: string;
+  slug: string;
+  title: string;
+  excerpt: string;
+  sourceUrl: string | null;
+}
+
+/**
+ * A full article body from `article`.
+ *
+ * `body` is the markdown source and `bodyHtml` the rendered form, which is
+ * null for an article that has never been rendered. Prefer `bodyHtml` and
+ * fall back to `body`; rendering the markdown yourself is a second renderer
+ * to keep in step with the widget's.
+ */
+export interface KbArticle extends Omit<KbArticleHit, 'excerpt'> {
+  body: string;
+  bodyHtml: string | null;
+  updatedAt: string;
+}

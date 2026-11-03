@@ -20,7 +20,9 @@ import type { WidgetIdentity } from './widget-identity.js';
 import type {
   OpenRequest,
   ReportActionInput,
+  SaleEventInput,
   SessionSnapshot,
+  SetCartInput,
   SetContextInput,
   StartConversationRequest,
   ChatlyEventHandler,
@@ -141,6 +143,20 @@ export interface ChatlyApi {
    */
   setContext: (input: SetContextInput) => void;
   /**
+   * Tell us the visitor's current route.
+   *
+   * Only needed when your router does NOT touch the History API — a
+   * hash-only router, or one that keeps its route in memory. The widget
+   * patches `pushState`, `replaceState` and `popstate` and follows an
+   * ordinary single-page app on its own, so most apps never call this.
+   *
+   * It writes the same `page` facet `setContext({ page })` does, which is
+   * what `page.path` bot-route conditions read. There is no `title`: the
+   * facet is a path and a url, and passing one is warned about rather than
+   * stored.
+   */
+  page: (input: { path?: string; url?: string }) => void;
+  /**
    * Report what your page did with a `host_event`, back into the thread.
    *
    * Appends a visible line under the card whose button was pressed, and
@@ -150,8 +166,68 @@ export interface ChatlyApi {
    * retry leaves one line.
    */
   reportAction: (input: ReportActionInput) => void;
+  /**
+   * Tell us what is in the visitor's basket.
+   *
+   * ```js
+   * Chatly('setCart', {
+   *   items: [{ id: 'sku_9', name: 'Clogs', variant: 'EU 42', quantity: 1, price: 4820 }],
+   *   total: 4820,
+   *   currency: 'USD',
+   *   url: 'https://shop.example.com/cart',
+   * });
+   * ```
+   *
+   * `price` and `total` are MINOR UNITS (4820 is $48.20) — the same contract
+   * a card's price has, for the same reason. Each call REPLACES the cart;
+   * `setCart({ items: [] })` is how you say they emptied it.
+   *
+   * It becomes a `commerce.cart_updated` visitor event, so a CDP audience can
+   * select on basket value and a workflow can act on it, and the basket rides
+   * along on the next `trackSale`. Fire-and-forget: it returns nothing and
+   * never makes your cart handler deal with a promise.
+   *
+   * Like `track()`, it is recorded against the visitor's CONTACT — a visitor
+   * who has neither identified nor sent a message has no contact yet, and the
+   * event is dropped server-side. Call `identify()` when you know who they
+   * are.
+   */
+  setCart: (input: SetCartInput) => void;
+  /**
+   * Report a sale: an order placed, or a line added to or removed from the
+   * basket.
+   *
+   * ```js
+   * Chatly('trackSale', { kind: 'order_created', orderId: '1043', total: 4820, currency: 'USD' });
+   * Chatly('trackSale', { kind: 'cart_add', item: { name: 'Clogs', quantity: 1, price: 4820 } });
+   * ```
+   *
+   * `kind` is `'order_created'`, `'cart_add'` or `'cart_remove'`, and each
+   * becomes the visitor event of the same name under `commerce.`. `total` is
+   * MINOR UNITS. The cart last given to `setCart` travels with it under
+   * `cart`, so an order event carries the basket that produced it.
+   *
+   * Same contact rule as `setCart` and `track`.
+   */
+  trackSale: (input: SaleEventInput) => void;
   /** Forget this visitor and boot a fresh anonymous session. */
   reset: () => void;
+  /**
+   * The same thing as `reset`, under the name a sign-out button wants.
+   *
+   * Exactly one function: `Chatly('logout')` and `Chatly('reset')` are
+   * indistinguishable, and neither deletes anything on the server — the
+   * person's conversation stays on their contact and comes back when they
+   * identify again. The name exists because three products in a row read
+   * `reset` as "clear the widget's state" and wrote their own sign-out
+   * bookkeeping beside it, which is the thing it already did.
+   *
+   * You usually do not need either. Calling `Chatly('identify', …)` with a
+   * different `externalId` already drops the previous person's session before
+   * the next request goes out. Call this when somebody signs out and nobody
+   * signs in.
+   */
+  logout: () => void;
   /**
    * Grant or withhold consent to use the visitor's browser storage.
    *
@@ -165,8 +241,25 @@ export interface ChatlyApi {
    *
    * It supersedes `'on-open'`: a banner that said no is not overruled by the
    * visitor later opening the chat.
+   *
+   * Pass an object to decide per category. The consent-manifest names are
+   * accepted as aliases (`preferences` = `functional`, `statistics` =
+   * `analytics`); `necessary` is ignored, because nothing Chatly stores is
+   * strictly necessary. A category the object omits is left as it was.
    */
-  setStorageConsent: (granted: boolean) => void;
+  setStorageConsent: (
+    granted:
+      | boolean
+      | {
+          functional?: boolean;
+          analytics?: boolean;
+          marketing?: boolean;
+          /** Consent-manifest spelling of `functional`. Chatly's own name wins if both are sent. */
+          preferences?: boolean;
+          /** Consent-manifest spelling of `analytics`: `{ statistics: true }` equals `{ analytics: true }`. */
+          statistics?: boolean;
+        },
+  ) => void;
   /**
    * Report a consent banner's decision, per category — the vendor-neutral
    * call for ANY consent tool, including one you wrote yourself.
@@ -190,6 +283,58 @@ export interface ChatlyApi {
    * If the consent module cannot be fetched, every category is denied.
    */
   setConsent: (consent: ChatlyConsent) => void;
+  /**
+   * Inspect, rewrite or stop a message the visitor is about to send.
+   *
+   * Synchronous, one handler (the last registration wins), and `null`
+   * unregisters. The handler gets `{ text }` and may return:
+   *
+   *   - `{ text: '...' }` to send that instead;
+   *   - `null` to stop the send — the visitor's composer clears and nothing
+   *     reaches the server;
+   *   - nothing at all to let it through unchanged.
+   *
+   * It runs on both outbound text paths — the first message of a thread and
+   * every later one — and NOT on a postback. A quick reply's body is the
+   * label on the button the visitor tapped and its payload is what the bot
+   * routes on, so rewriting one would make the transcript disagree with the
+   * other.
+   *
+   * A handler that throws is treated as having no opinion: the message is
+   * sent unchanged and a warning is logged. Failing closed would mean a page
+   * with an unrelated JavaScript bug silently swallowing its own customers'
+   * support messages.
+   */
+  beforeMessageSent: (
+    handler: ((m: { readonly text: string }) => { readonly text?: string } | null | void) | null,
+  ) => void;
+  /**
+   * Hide a message from the visitor's transcript.
+   *
+   * Synchronous, one handler, `null` unregisters. The handler gets
+   * `{ text, from }` where `from` is `'visitor' | 'agent' | 'bot' | 'system'`,
+   * and the ONLY answer it can give is `false` to hide the message. Anything
+   * else — `true`, `undefined`, a thrown error — shows it.
+   *
+   * **It cannot edit a message and it cannot change who a message is from.**
+   * That is deliberate and it is where this differs from the equivalent hook
+   * elsewhere in the category: a host page being able to rewrite an agent's
+   * words, or an agent's name, inside the visitor's own transcript is not a
+   * capability Chatly offers. Shape your own outbound text with
+   * `beforeMessageSent`; for inbound, the answer is yes or no.
+   *
+   * A hidden message is still in the thread's state, so it still counts
+   * toward the launcher's unread badge. The hook hides a message from the
+   * transcript; it does not pretend it never arrived.
+   */
+  beforeMessageDisplay: (
+    handler:
+      | ((m: {
+          readonly text: string;
+          readonly from: 'visitor' | 'agent' | 'bot' | 'system';
+        }) => boolean | void)
+      | null,
+  ) => void;
   /**
    * Move the widget and its panel after boot — the live form of
    * `theme.offsetX`, `theme.offsetY` and `theme.panelOffsetY`.

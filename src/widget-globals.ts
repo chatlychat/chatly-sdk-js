@@ -79,7 +79,9 @@ import type {
   ChatlyEventHandler,
   OpenRequest,
   ReportActionInput,
+  SaleEventInput,
   SessionSnapshot,
+  SetCartInput,
   SetContextInput,
   StartConversationRequest,
 } from './widget-payloads.js';
@@ -100,13 +102,30 @@ export type {
   ChatlyEventHandler,
   OpenRequest,
   ReportActionInput,
+  SaleEventInput,
   SessionSnapshot,
+  SetCartInput,
   SetContextInput,
   StartConversationRequest,
 };
 
 export type ChatlyEventName =
   | 'ready'
+  /**
+   * A `contextToken` was refused, or a renewal of one was. Detail is
+   * `{ reason }` — the server's `unverifiedReason`. `context.verified.*` is
+   * empty and every profile and bot route keyed on a signed claim is now
+   * matching on nothing, which is why this is an event and not only a
+   * console warning.
+   */
+  | 'context.invalid'
+  /**
+   * A verified `contextToken` reached its `exp` with nothing to replace it:
+   * either no `contextTokenProvider` was set, or the one that was set threw.
+   * Detail is `{ reason }`. Expired claims are NOT kept — see
+   * `sdk-commerce.ts` for why holding them was declined.
+   */
+  | 'context.expired'
   /**
    * The panel opened. Detail is `{ conversationId }` — the thread it opened
    * on, or null on the home screen or an unsent new conversation. It was `{}`
@@ -263,6 +282,18 @@ export interface InitOptions {
   apiUrl?: string;
 
   /**
+   * Mint a `contextToken` now, and again shortly before it expires.
+   *
+   * For a long-lived page (an SPA, a dashboard left open) whose signed
+   * context would otherwise lapse mid-session. Return the JWT your server
+   * signed with the channel's identity-verification secret; it is applied
+   * through the same `setContext` path as one you pass yourself. If it
+   * throws, `context.expired` fires and the claims lapse — Chatly does not
+   * hold expired signed claims.
+   */
+  contextTokenProvider?: () => string | Promise<string>;
+
+  /**
    * Override the realtime (Socket.IO) host. Defaults to the API host with
    * `api.` → `realtime.` if a subdomain match exists, else the API host
    * itself (single-port deployments).
@@ -377,6 +408,11 @@ export interface InitOptions {
         functional?: 'allow' | 'deny' | 'on-open';
         analytics?: 'allow' | 'deny' | 'on-open';
         marketing?: 'allow' | 'deny' | 'on-open';
+        /** Consent-manifest spelling of `functional`. Chatly's own name wins if both are sent. */
+        preferences?: 'allow' | 'deny' | 'on-open';
+        /** Consent-manifest spelling of `analytics`. Chatly's own name wins if both are sent. */
+        statistics?: 'allow' | 'deny' | 'on-open';
+        // `necessary` is deliberately not accepted: nothing Chatly stores is strictly necessary (ADR 0075).
       };
 
   /**

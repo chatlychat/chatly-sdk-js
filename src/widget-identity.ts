@@ -48,10 +48,15 @@ export interface WidgetIdentity {
   name?: string;
   userHash?: string;
   /**
-   * IDV v2: a short-lived HS256 JWT YOUR SERVER mints with the channel's
-   * identity-verification secret, signing the identity itself — `sub` (the
+   * IDV v2: a short-lived HS256 JWT signed with the channel's
+   * identity-verification secret, carrying the identity itself — `sub` (the
    * external id), and optionally `email`, `name` and `attrs` — rather than
    * only the external id the way `userHash` does.
+   *
+   * Your server can mint it, or it can ask for one:
+   * `POST /v1/widget/tokens { publicId, externalId, ttl? }` with a workspace
+   * API key returns exactly this string, so a host with no JWT library (and
+   * no secret in its application code) passes the result straight through.
    *
    * Audience `chatly:<publicId>`, `exp` at most 300 seconds after `iat`. It
    * is accepted alongside `userHash` on an `hmac` channel, so a page can
@@ -91,7 +96,7 @@ export interface WidgetIdentity {
    *
    * ```js
    * Chatly('identify', {
-   *   getToken: () => atlas.session.getToken({ template: 'chatly' }),
+   *   getToken: () => atlas.session.getToken({ template: 'chatly-visitor' }),
    * });
    * ```
    *

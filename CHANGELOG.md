@@ -1,5 +1,63 @@
 # @chatlychat/sdk-js — changelog
 
+## 0.26.0 — 2026-11-03
+
+- `setStorageConsent` is typed for the call it has accepted since CHT-S04: a
+  boolean, or an object deciding categories separately. It was declared
+  `(granted: boolean) => void`, which is the narrower of the two things the
+  widget does.
+- Both spellings of a consent category are accepted and documented:
+  `preferences` and `statistics` are the consent-manifest names for
+  `functional` and `analytics`, and `necessary` is ignored — nothing Chatly
+  stores is strictly necessary (ADR 0075).
+
+## 0.25.0 — 2026-10-28
+
+### Added
+
+- **`Chatly('setCart', …)`** — tell us what is in the visitor's basket.
+  `items`, `total`, `currency` and `url`; each call REPLACES the cart, and
+  `setCart({ items: [] })` is how you say they emptied it. It becomes a
+  `commerce.cart_updated` visitor event, so a CDP audience can select on
+  basket value and a workflow can act on it, and the basket rides along on the
+  next `trackSale`. Fire-and-forget: it returns nothing, so your cart handler
+  never has to deal with a promise.
+- **`Chatly('trackSale', …)`** — report a completed purchase, with
+  `SaleEventInput`.
+
+`price` and `total` are **minor units** (4820 is $48.20), the same contract a
+card's price has and for the same reason.
+
+### Note on these two versions
+
+0.24.0 and 0.25.0 had both shipped to `package.json` without an entry here —
+0.24.0 in the 2026-10-28 release commit and 0.25.0 with the parity sweep that
+added the two methods above. `check-sibling-peer-ranges` caught the gap. The
+surface is described once, here, rather than guessed at twice.
+
+## 0.23.0 — 2026-10-27
+
+Two knowledge-base reads a host page could not do before:
+`searchArticles(query, { limit, locale, profile })` and `article(slug, { profile })`,
+plus the `KbArticleHit` and `KbArticle` types.
+
+Both routes already existed and the widget has used search since its article
+chunk shipped — what was missing was the programmatic surface, which is how
+Crisp, Help Scout's Beacon and HubSpot all expose their KB.
+
+`article` **rejects** on a missing, unpublished or out-of-scope slug rather
+than resolving to null: the API answers 404 to all three deliberately, because
+saying an article exists but is not for you is itself a disclosure, so there is
+no "exists but not for you" state to represent.
+
+`profile` is an audience NAME, resolved server-side against the channel's help
+config, so it can only ever narrow what comes back.
+
+An option you do not pass is **omitted** from the request rather than sent as
+`undefined`. That matters for `locale`: absent means "no locale context and
+therefore no filter", which is what an older widget bundle sends and must keep
+getting.
+
 ## 0.22.0 — 2026-10-26
 
 `WidgetTheme.colorScheme` accepts `'host'`, and a new `hostScheme`

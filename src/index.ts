@@ -10,12 +10,16 @@
  */
 
 import { ChatlyError } from './errors.js';
+import { kbArticleBody, kbSearchBody } from './kb.js';
 import { createSubscription } from './subscription.js';
 import { sumUnread } from './unread.js';
 
+import type { KbArticleOptions, KbSearchOptions } from './kb.js';
 import type {
   HeadlessConversation,
   HeadlessMessage,
+  KbArticle,
+  KbArticleHit,
   SubscribeHandlers,
   SubscribeOptions,
   Subscription,
@@ -24,12 +28,15 @@ import type {
 export type {
   HeadlessConversation,
   HeadlessMessage,
+  KbArticle,
+  KbArticleHit,
   SubscribeHandlers,
   SubscribeOptions,
   SocketIoFactory,
   Subscription,
   TypingSignal,
 } from './types.js';
+export type { KbArticleOptions, KbSearchOptions } from './kb.js';
 export { TYPING_STOP_AFTER_MS } from './live.js';
 /*
  * The error every failure path now carries. `ChatlyError extends Error`, so
@@ -429,6 +436,43 @@ export class Chatly {
     return () => {
       this.sessionListeners.delete(fn);
     };
+  }
+
+  // ── Knowledge base ─────────────────────────────────────────────
+  // `kb.ts`: the request bodies, and why an absent option is omitted.
+
+  /**
+   * Search the workspace's published knowledge base.
+   *
+   * Not paginated — `limit` caps the set and there is no cursor, so do not
+   * wrap this in a paginator.
+   */
+  public async searchArticles(query: string, opts: KbSearchOptions = {}): Promise<KbArticleHit[]> {
+    await this.ensureVisitorToken();
+    const res = await this.request(
+      '/v1/widget/kb/search',
+      kbSearchBody(this.opts.publicId, this.visitorToken, query, opts),
+    );
+    const body = (await res.json()) as { results?: KbArticleHit[] };
+    return body.results ?? [];
+  }
+
+  /**
+   * One article's full body, by slug.
+   *
+   * A missing slug, an unpublished one and one outside this audience's scope
+   * all answer 404 — deliberately the same answer, because saying an article
+   * exists but is not for you is itself a disclosure. So this rejects with a
+   * `ChatlyError` rather than resolving to null.
+   */
+  public async article(slug: string, opts: KbArticleOptions = {}): Promise<KbArticle> {
+    await this.ensureVisitorToken();
+    const res = await this.request(
+      '/v1/widget/kb/article',
+      kbArticleBody(this.opts.publicId, this.visitorToken, slug, opts),
+    );
+    const body = (await res.json()) as { article: KbArticle };
+    return body.article;
   }
 
   /** Submit a post-chat satisfaction score (1-5, or 0-10 for NPS). */

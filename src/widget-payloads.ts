@@ -11,6 +11,77 @@
 export interface StartConversationRequest {
   readonly botSlug?: string;
   readonly initialMessage?: string;
+  /**
+   * What this conversation is ABOUT, decided by the page that opened it.
+   *
+   * The channel's `widget.lead.topic`, and the thing that makes a lead form
+   * appear: a "Talk to sales" button passes `topic: 'sales'`, a support
+   * launcher passes nothing and the visitor sees the ordinary composer. The
+   * server stamps it as a conversation label at CREATION and publishes
+   * `lead.captured`, so the thread can be routed, filtered and counted.
+   *
+   * ── Why this is not `setLabel` ──────────────────────────────────────────
+   *
+   * Because `setLabel` cannot do it, which is what the integrator who asked
+   * for this had discovered the hard way. It takes a `conversationId` and
+   * 404s when the session has no contact, so calling it before `open()` —
+   * the obvious thing, and what Calendoro shipped — is a silent no-op, and
+   * every sales thread reached the inbox untagged. A topic has to be decided
+   * before the conversation exists, which means it travels with the request
+   * that creates it.
+   *
+   * An unrecognised topic is warned about by the server and the conversation
+   * opens untagged: a typo must not cost a visitor their chat.
+   */
+  readonly topic?: string;
+  /**
+   * What the page knows ABOUT this thread, for the agent and the bot (W-H3).
+   *
+   * The case it exists for: a "Get help with this order" button beside one
+   * order, where the agent should see which order without the visitor
+   * retyping it.
+   *
+   *     Chatly('open', {
+   *       view: 'conversation',
+   *       conversation: { attributes: { order_id: 'A-1902' }, label: 'orders' },
+   *     });
+   *
+   * ── Why neither `setCustomAttributes` nor `setLabel` does this ──────────
+   *
+   * `setCustomAttributes` writes to the CONTACT, so the value outlives the
+   * thread: the visitor's next conversation, about a different order, still
+   * carries this one's number. `setLabel` needs a `conversationId`, which
+   * does not exist until the visitor sends — the same trap `topic` above
+   * documents, where calling it before `open()` is a silent no-op.
+   *
+   * ── What the operator has to have done first ───────────────────────────
+   *
+   * Both halves are checked against the workspace's own configuration,
+   * because this object comes from a page we do not control:
+   *
+   *   - an `attributes` key must exist as a conversation custom attribute in
+   *     Settings, and the value must match its type (a `number` attribute
+   *     accepts `'3'` and stores `3`; a `list` attribute accepts only its own
+   *     options);
+   *   - a `label` must already be in the workspace's label registry. Casing
+   *     does not matter and the registered spelling is what gets stored.
+   *
+   * Anything else is DROPPED and the conversation opens without it — a
+   * renamed attribute must not cost a visitor their chat. The drop is logged
+   * server-side with the workspace id.
+   *
+   * Values are `string | number | boolean`: a nested object has no rendering
+   * in the inbox and no comparison in a workflow condition. At most eight
+   * keys, because this is a hint from a page and not an import.
+   *
+   * Stamped at CREATION and never updated, like `topic`. Opening a second
+   * conversation without it gives a thread with none of these — which is the
+   * whole difference from a contact attribute.
+   */
+  readonly conversation?: {
+    readonly attributes?: Readonly<Record<string, string | number | boolean>>;
+    readonly label?: string;
+  };
 }
 
 /**
@@ -55,6 +126,49 @@ export interface SetContextInput {
  * status: 'done' | 'failed', text?: string, blocks?: unknown, data?:
  * Record<string, unknown> }`.
  */
+/**
+ * What `Chatly.setCart()` accepts. `unknown` for the same reason as
+ * `SetContextInput`: a host page is JavaScript, so every field is re-checked
+ * at runtime and a wrong one is a console warning, never a throw.
+ *
+ * The shape the widget acts on is `{ items?: Array<{ name: string, id?:
+ * string, variant?: string, quantity?: number, price?: number }>, total?:
+ * number, currency?: string, url?: string, id?: string }`.
+ *
+ * **`price` and `total` are MINOR UNITS** — 4820 is $48.20, and also ¥4,820,
+ * and also 4.820 KWD. The same contract a card's price has
+ * (`widget-blocks/money.ts` has the three-decimal currencies that make a
+ * divisor of 100 wrong), and the reason is the same: `48.20` is a float, and
+ * 0.1 + 0.2 is why a basket total renders two different ways on two screens.
+ * A `total` that is not a non-negative safe integer is dropped, not rounded.
+ *
+ * Each call REPLACES the cart. Fifty lines are kept and the rest dropped.
+ */
+export interface SetCartInput {
+  items?: unknown;
+  total?: unknown;
+  currency?: unknown;
+  url?: unknown;
+  id?: unknown;
+}
+
+/**
+ * What `Chatly.trackSale()` accepts.
+ *
+ * The shape the widget acts on is `{ kind: 'order_created' | 'cart_add' |
+ * 'cart_remove', total?: number, currency?: string, orderId?: string, item?:
+ * <one cart line> }`. `total` is MINOR UNITS, as on `SetCartInput`. An
+ * unrecognised `kind` is a warning and nothing is sent — a sale event under a
+ * name no audience rule matches is worse than none.
+ */
+export interface SaleEventInput {
+  kind?: unknown;
+  total?: unknown;
+  currency?: unknown;
+  orderId?: unknown;
+  item?: unknown;
+}
+
 export interface ReportActionInput {
   messageId?: unknown;
   actionId?: unknown;
@@ -79,6 +193,21 @@ export interface OpenRequest extends StartConversationRequest {
    * differ in whether the visitor has to click again.
    */
   readonly view: 'conversation';
+  /**
+   * Put the panel above THIS element instead of in the corner, for this open.
+   *
+   * A CSS selector, the same spelling as `theme.anchor` — which is the
+   * standing setting, where this is the one-off. A page with several chat
+   * buttons (one per product card, say) names the one that was pressed, and
+   * the panel appears above it rather than over the corner of the page.
+   *
+   * It takes priority over `theme.anchor` while the panel stays open and is
+   * cleared on close, so it never changes where a later launcher open lands.
+   * A selector that matches nothing, or a malformed one, falls back to
+   * `theme.anchor` and then to the corner, exactly as a missing anchor does —
+   * nothing here can throw into the host page.
+   */
+  readonly anchor?: string;
   /**
    * Open an EXISTING thread, by the id a `conversation` event handed you.
    *
