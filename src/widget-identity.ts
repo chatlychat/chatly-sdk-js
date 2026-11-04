@@ -122,7 +122,17 @@ export interface WidgetIdentity {
    * 403 naming both values rather than silently preferring one, because
    * filing the contact under `sub` while your code believes it identified
    * `u_42` is a bug nobody would ever find.
+   *
+   * ── `null` is "signed out", not an error ──────────────────────────────
+   *
+   * A provider's own minter answers `Promise<string | null>` — an Atlas
+   * `getToken()` is null once the session has ended — so this accepts null
+   * rather than making every host write `?? ''` and invent a meaning for the
+   * empty string. Null, empty and a throw are all read the same way: nobody
+   * is signed in. The widget forgets whoever it remembered, continues
+   * anonymously, warns once on the console and sends NO request — it never
+   * puts a credential it does not have on the wire.
    */
-  getToken?: () => string | Promise<string>;
+  getToken?: () => string | null | Promise<string | null>;
   attributes?: Record<string, unknown>;
 }

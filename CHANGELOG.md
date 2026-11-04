@@ -1,5 +1,19 @@
 # @chatlychat/sdk-js — changelog
 
+## 0.26.1 — 2026-11-03
+
+- **`visitor.getToken` accepts a provider that answers `null`.** It was typed
+  `() => string | Promise<string>`, so the shape every hosted identity
+  provider actually hands you — Atlas's `getToken(): Promise<string | null>`
+  — needed a cast or a `?? ''` at the call site. Reported by an integrator who
+  had written both. The runtime already treated `null`, `''` and a thrown
+  error identically; only the type disagreed, which is the worst way for this
+  to be wrong, because the compiler sends you to work around behaviour that is
+  already correct.
+- `null` is **documented** as "signed out": the widget forgets whoever it had
+  remembered, continues anonymously, logs one console warning and sends no
+  credential. No behaviour changed in this release.
+
 ## 0.26.0 — 2026-11-03
 
 - `setStorageConsent` is typed for the call it has accepted since CHT-S04: a
