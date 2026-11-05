@@ -1,5 +1,13 @@
 # @chatlychat/sdk-js — changelog
 
+## 0.26.2 — 2026-11-05
+
+- **The four accessible-name copy keys are typed.** `launcherAria`,
+  `unreadAria`, `panelAria` and `loadingAria` on `theme.copy` — the widget has
+  rendered them since the WCAG conformance pass, and the published types did
+  not carry them, so setting one from TypeScript needed a cast. Additive and
+  optional; nothing behaves differently.
+
 ## 0.26.1 — 2026-11-03
 
 - **`visitor.getToken` accepts a provider that answers `null`.** It was typed

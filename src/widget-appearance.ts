@@ -528,6 +528,10 @@ export interface WidgetCopy {
   poweredBy?: string; // "Powered by Chatly"
   closeAria?: string; // "Close chat"
   backAria?: string; // "Back"
+  launcherAria?: string; // "Open chat"
+  unreadAria?: string; // "unread" (appended as ", 3 unread")
+  panelAria?: string; // "Chat with us"
+  loadingAria?: string; // "Loading"
   /**
    * Shown to the VISITOR when the widget could not start at all — a refused
    * origin, a dead network, a 5xx. Deliberately says nothing about the cause:

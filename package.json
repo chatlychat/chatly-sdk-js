@@ -1,6 +1,6 @@
 {
   "name": "@chatlychat/sdk-js",
-  "version": "0.26.1",
+  "version": "0.26.2",
   "description": "Browser SDK for Chatly — identify visitors, fire CDP events, control the widget, run a conversation headlessly, and type window.Chatly.",
   "license": "MIT",
   "homepage": "https://github.com/chatlychat/chatly-sdk-js#readme",
