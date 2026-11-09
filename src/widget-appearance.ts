@@ -423,7 +423,19 @@ export interface WidgetBehavior {
   defaultTab?: 'home' | 'messages' | 'help';
   /** Open the widget automatically after N ms on the page. */
   autoOpenAfterMs?: number;
-  /** Hide the widget on URL patterns (globs). */
+  /**
+   * Don't render on these paths — up to 50 globs matched against
+   * `location.pathname`. `*` is any run of characters, `?` is exactly one, and
+   * the pattern is anchored at both ends (`/checkout` is only `/checkout`;
+   * write `/checkout*` for the flow).
+   *
+   * Re-evaluated on every client-side navigation, so it follows an SPA router.
+   * On a hard load of a matching path the widget does not mount at all; after
+   * that, routing onto one hides the launcher and closes an open panel while
+   * KEEPING the session, and routing off it brings the launcher back. To hide
+   * the launcher and leave an open panel alone, use
+   * `Chatly('setTheme', { hideLauncher })` instead.
+   */
   hideOnUrls?: string[];
   /** Tone the empty-help state down: hide search until typed in. */
   helpSearchOnly?: boolean;

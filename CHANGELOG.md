@@ -1,5 +1,20 @@
 # @chatlychat/sdk-js — changelog
 
+## 0.26.3 — 2026-11-09
+
+- **`behavior.hideOnUrls` is documented as what it now does.** The type's
+  one-line comment ("Hide the widget on URL patterns (globs)") described a
+  field that was read once, at `init`, against the landing path. It is
+  re-evaluated on every client-side navigation now, so it follows an SPA
+  router — and the two readings differ in a way an integrator has to know:
+  on a hard load of a matching path the widget does not mount at all, and
+  after that, routing onto one hides the launcher and closes an open panel
+  while KEEPING the session. The glob is anchored at both ends, so
+  `/checkout` matches only `/checkout` and the flow wants `/checkout*`,
+  which the old comment did not say and which is the mistake everyone makes
+  first. To hide the launcher and leave an open panel alone, there is
+  `Chatly('setTheme', { hideLauncher })` instead.
+
 ## 0.26.2 — 2026-11-05
 
 - **The four accessible-name copy keys are typed.** `launcherAria`,
