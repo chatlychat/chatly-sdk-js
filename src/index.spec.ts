@@ -134,9 +134,9 @@ describe('identify', () => {
     // The token is an opaque signed credential now, not the external id, and
     // identifying mints a NEW one. Keeping the old one would leave the SDK
     // acting as whoever it was before.
-    localStorage.setItem('livechat:vt:pub_1', 'vs1.anonymous.session');
+    localStorage.setItem('chatly:vt:pub_1', 'vs1.anonymous.session');
     await sdk().identify({ externalId: 'u_42', userHash: 'a'.repeat(64) });
-    expect(localStorage.getItem('livechat:vt:pub_1')).toBe('vt_abc');
+    expect(localStorage.getItem('chatly:vt:pub_1')).toBe('vt_abc');
   });
 
   it('passes userHash through so a verified channel is usable at all', async () => {
@@ -151,7 +151,7 @@ describe('a refused session token', () => {
     // What a mid-session visitor hits on the deploy that stops accepting a
     // raw external id as a credential. The integrator's code did nothing
     // wrong, so the SDK absorbs it rather than throwing at them.
-    localStorage.setItem('livechat:vt:pub_1', 'u_42');
+    localStorage.setItem('chatly:vt:pub_1', 'u_42');
     const answers: Array<() => Response> = [
       () =>
         ({
@@ -188,7 +188,7 @@ describe('a refused session token', () => {
   });
 
   it('does not retry a 403 that is not about the session', async () => {
-    localStorage.setItem('livechat:vt:pub_1', 'vs1.valid');
+    localStorage.setItem('chatly:vt:pub_1', 'vs1.valid');
     globalThis.fetch = vi.fn(async (url: unknown, init: unknown) => {
       calls.push({ url: String(url), init: (init ?? {}) as RequestInit });
       return {
@@ -205,7 +205,7 @@ describe('a refused session token', () => {
 describe('visitor token', () => {
   it('persists across instances so a reload keeps the conversation', async () => {
     await sdk().identify({ email: 'a@b.com' });
-    expect(localStorage.getItem('livechat:vt:pub_1')).toBe('vt_abc');
+    expect(localStorage.getItem('chatly:vt:pub_1')).toBe('vt_abc');
     // A second instance must pick it up rather than starting a new visitor.
     const again = Chatly.init({ publicId: 'pub_1', apiUrl: 'https://api.test' });
     expect(again).toBeDefined();
@@ -213,7 +213,7 @@ describe('visitor token', () => {
 
   it('scopes the token per publicId', async () => {
     await sdk().identify({ email: 'a@b.com' });
-    expect(localStorage.getItem('livechat:vt:pub_2')).toBeNull();
+    expect(localStorage.getItem('chatly:vt:pub_2')).toBeNull();
   });
 });
 

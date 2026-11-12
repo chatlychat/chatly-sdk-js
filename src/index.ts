@@ -13,6 +13,7 @@ import { ChatlyError } from './errors.js';
 import { kbArticleBody, kbSearchBody } from './kb.js';
 import { createSubscription } from './subscription.js';
 import { sumUnread } from './unread.js';
+import { clearVisitorToken, readVisitorToken, writeVisitorToken } from './visitor-token.js';
 
 import type { KbArticleOptions, KbSearchOptions } from './kb.js';
 import type {
@@ -154,12 +155,7 @@ export class Chatly {
      * ever should.
      */
     this.base = opts.apiUrl ?? 'https://api.chatlychat.com';
-    // Storage key deliberately left as `livechat:` — the internal scope name.
-    // Renaming it would orphan the visitor token of every browser that has
-    // one, silently signing those visitors out of their own conversation.
-    // Cosmetics are not worth that; the customer-visible strings are what
-    // matter and those say Chatly.
-    this.visitorToken = localStorage.getItem(`livechat:vt:${opts.publicId}`);
+    this.visitorToken = readVisitorToken(opts.publicId);
   }
 
   public open(): void {
@@ -510,7 +506,7 @@ export class Chatly {
 
   private setVisitorToken(token: string): void {
     this.visitorToken = token;
-    localStorage.setItem(`livechat:vt:${this.opts.publicId}`, token);
+    writeVisitorToken(this.opts.publicId, token);
   }
 
   /**
@@ -583,7 +579,7 @@ export class Chatly {
         // integrator's code did nothing wrong and should not have to handle
         // it: drop the dead token, get a fresh one, replay the call once.
         this.visitorToken = null;
-        localStorage.removeItem(`livechat:vt:${this.opts.publicId}`);
+        clearVisitorToken(this.opts.publicId);
         await this.ensureVisitorToken();
         /*
          * A new session exists, so every credential derived from the old one

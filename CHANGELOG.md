@@ -1,5 +1,13 @@
 # @chatlychat/sdk-js — changelog
 
+## 0.27.0 — 2026-11-12
+
+A **minor** with no type or runtime change, released with the rest of the set
+so one version answers "which release is this".
+
+- No surface change. See `@chatlychat/cli` 0.11.0 for the Atlas event-receiver
+  work this release accompanies.
+
 ## 0.26.3 — 2026-11-09
 
 - **`behavior.hideOnUrls` is documented as what it now does.** The type's

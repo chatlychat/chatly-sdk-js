@@ -34,7 +34,7 @@ await chatly.send(conversationId, 'and one more thing');
 
 | Option        | Type      | Default                      | Notes                                                                     |
 | ------------- | --------- | ---------------------------- | ------------------------------------------------------------------------- |
-| `publicId`    | `string`  | —                            | The web channel's public id, from Dashboard → Channels.                   |
+| `publicId`    | `string`  | —                            | The web channel's public id, from Connect → Channels.                     |
 | `apiUrl`      | `string?` | `https://api.chatlychat.com` | Another Chatly environment, or a test server in your own suite.           |
 | `realtimeUrl` | `string?` | reported by the server       | Socket.IO host for `subscribe()`. Only for a host the server cannot know. |
 
