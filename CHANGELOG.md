@@ -1,5 +1,22 @@
 # @chatlychat/sdk-js — changelog
 
+## 0.28.0 — 2026-11-13
+
+- **`setContext({ links })` is typed.** A page can hand the agent reading the
+  conversation its own links — a session replay, the visitor's order in your
+  admin — as `[{ label, url }]`: at most ten, labels up to 60 characters,
+  `http:`/`https:` only, each entry refused server-side on its own rather than
+  the call failing whole. Every call REPLACES the list and `links: []` clears
+  it.
+
+  Two things an integrator has to know, because neither is guessable from the
+  type. The list is **unsigned**, so it is shown to your team under its own
+  heading ("Links from the website") — an agent can tell a line the page
+  asserted from one a colleague wrote, and it never merges with the list
+  `PUT /v1/conversations/:id/external-links` writes. And the field reached the
+  API in 0.27.0's release window while this package still said 0.27.0, so it
+  existed in the server and in no installed copy of this SDK until now.
+
 ## 0.27.0 — 2026-11-12
 
 A **minor** with no type or runtime change, released with the rest of the set

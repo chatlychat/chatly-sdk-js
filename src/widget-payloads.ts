@@ -116,6 +116,20 @@ export interface SetContextInput {
    * overwrite each other.
    */
   surface?: unknown;
+  /**
+   * Links the page offers the AGENT reading this conversation — a session
+   * replay, the visitor's order in your admin: `[{ label, url }]`, at most
+   * ten, labels up to 60 characters, `http:`/`https:` only.
+   *
+   * UNSIGNED, and shown to your team UNDER ITS OWN HEADING ("Links from the
+   * website") so an agent can tell a line the page asserted from one a
+   * colleague wrote. It never merges with the list
+   * `PUT /v1/conversations/:id/external-links` writes.
+   *
+   * Each call REPLACES the list, and `links: []` clears it. A link whose URL
+   * is not an ordinary web URL is refused server-side, entry by entry.
+   */
+  links?: unknown;
 }
 
 /**
